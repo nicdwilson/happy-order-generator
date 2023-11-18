@@ -1,0 +1,37 @@
+{
+    "autoload": {
+        "classmap": ["includes/"],
+        "psr-4": {
+            "Happy_Order_Generator\\": ["includes/"]
+        }
+    },
+    "repositories": [{
+        "type": "vcs",
+        "url": "https://github.com/pablo-sg-pacheco/wp-namespace-autoloader"
+    }],
+    "require": {
+        "fakerphp/faker": "^1.23"
+    },
+    "require-dev": {
+        "squizlabs/php_codesniffer": "^3.7",
+        "wp-coding-standards/wpcs": "^3.0",
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+        "phpcompatibility/php-compatibility": "^9.3"
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        },
+        "optimize-autoloader": true,
+        "classmap-authoritative": true
+    },
+    "scripts": {
+        "lint": "phpcs",
+        "install-codestandards": [
+            "Dealerdirect\\Composer\\Plugin\\Installers\\PHPCodeSniffer\\Plugin::run"
+        ],
+        "post-install-cmd": [
+            "@install-codestandards"
+        ]
+    }
+}
