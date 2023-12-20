@@ -220,7 +220,7 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'title' => __( 'Enable logging', 'happy-order-generator' ),
 				'id'    => 'hog_debug',
 				'type'  => 'checkbox',
-				'value' => $settings['enable_debug']
+				'value' => ( isset( $settings['enable_debug'] ) ) ? $settings['enable_debug'] : 'no',
 			),
 			array(
 				'type' => 'sectionend',
