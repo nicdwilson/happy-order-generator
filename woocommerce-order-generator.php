@@ -33,6 +33,8 @@
 
 namespace Happy_Order_Generator;
 
+use Automattic\WooCommerce\Utilities\FeaturesUtil;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
@@ -90,13 +92,28 @@ class Order_Generator {
 		/**
 		 * Log the user in before process_customer runs during checkout
 		 */
-		add_action( 'woocommerce_store_api_checkout_update_customer_from_request', array( $this, 'log_customer_in' ), 10, 2 );
+		add_action( 'woocommerce_store_api_checkout_update_customer_from_request', array(
+			$this,
+			'log_customer_in'
+		), 10, 2 );
 
-		add_action('action_scheduler_init', array( 'Happy_Order_Generator\Cron_Jobs', 'instance' ));
-		add_action('plugins_loaded', array( 'Happy_Order_Generator\Gateway_Integration_Stripe', 'instance' ));
+		/**
+		 * Load up the Action Scheduler jobs
+		 */
+		add_action( 'action_scheduler_init', array( 'Happy_Order_Generator\Cron_Jobs', 'instance' ) );
+
+		/**
+		 * Fire up the Stripe Gateway integration
+		 */
+		add_action( 'plugins_loaded', array( 'Happy_Order_Generator\Gateway_Integration_Stripe', 'instance' ) );
 
 	}
 
+	/**
+	 * Returns the plugin settings
+	 *
+	 * @return array
+	 */
 	public function add_setting_page(): array {
 		$settings[] = include_once plugin_dir_path( __FILE__ ) . 'includes/admin/class-wc-settings-order-generator.php';
 
@@ -113,9 +130,9 @@ class Order_Generator {
 	 */
 	public function log_customer_in( $customer, $request ): void {
 
-		$user = get_user_by( 'email', sanitize_email( $_POST['billing_address']['email']) );
+		$user = get_user_by( 'email', sanitize_email( $_POST['billing_address']['email'] ) );
 
-		if( $user ){
+		if ( $user ) {
 			wc_set_customer_auth_cookie( $user->ID );
 		}
 	}
@@ -128,6 +145,7 @@ class Order_Generator {
 	public static function get_settings(): array {
 
 		$settings = get_option( 'happy_order_generator_settings', array() );
+
 		return ( is_array( $settings ) ) ? $settings : array();
 	}
 
@@ -138,7 +156,7 @@ class Order_Generator {
 	 */
 	public static function check(): bool {
 
-		$passed        = true;
+		$passed = true;
 		$inactive_text = '<strong>' . sprintf( __( '%s is inactive.', 'Happy Order Generator' ), __( 'Happy Order Generator', 'happy-order-generator' ) ) . '</strong>';
 
 		if ( version_compare( phpversion(), ORDER_GENERATOR_MIN_PHP_VER, '<' ) ) {
@@ -206,8 +224,12 @@ class Order_Generator {
 	 * @since 5.5.23
 	 */
 	public function declare_feature_compatibility(): void {
-		if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
-			\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
+
+		/**
+		 * HPOS compatible
+		 */
+		if ( class_exists( FeaturesUtil::class ) ) {
+			FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
 		}
 	}
 }

@@ -5,8 +5,6 @@
 
 namespace Happy_Order_Generator;
 
-use Faker\Generator;
-
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
@@ -52,14 +50,14 @@ class Cron_Jobs {
 	 */
 	public function __construct() {
 
+		$this->settings = Order_Generator::get_settings();
+
 		$this->setup_action_scheduler();
 
 		add_action( 'create_happy_orders', array( $this, 'create_orders') , 10, 1 );
 	}
 
-	public function setup_action_scheduler() {
-
-		$this->settings = Order_Generator::get_settings();
+	public function setup_action_scheduler(): void {
 
 		if( empty( $this->settings ) ){
 			return;
@@ -74,7 +72,7 @@ class Cron_Jobs {
 		//todo if current action is okay, leave it.
 		if ( $this->settings['batch_size'] == $args['batch_size'] && $this->settings['interval'] = $interval_in_seconds ) {
 			if ( as_has_scheduled_action( $this->action_hook ) ) {
-				return false;
+				return;
 			}
 		}
 
@@ -87,7 +85,6 @@ class Cron_Jobs {
 
 		update_option( 'wc_order_generator_settings', $this->settings );
 
-		return true;
 	}
 
 	/**
@@ -128,6 +125,7 @@ class Cron_Jobs {
 	 * @param $args
 	 *
 	 * @return void
+	 * @throws \WC_Stripe_Exception
 	 */
 	public function create_orders( $args = 1 ): void {
 
