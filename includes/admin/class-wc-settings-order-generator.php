@@ -23,7 +23,7 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 	public function __construct() {
 
 		$this->id    = 'order_generator';
-		$this->label = __( 'Order Generator', 'order-generator' );
+		$this->label = __( 'Order Generator', 'happy-order-generator' );
 
 		add_filter( 'woocommerce_settings_tabs_array', array( $this, 'add_settings_page' ), 20 );
 		add_action( 'woocommerce_settings_' . $this->id, array( $this, 'output' ) );
@@ -35,12 +35,12 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 	 *
 	 * @return array
 	 */
-	public function get_settings() {
+	public function get_settings(): array {
 
 		$settings    = Order_Generator::get_settings();
 		$product_ids = ( isset( $settings['products'] ) ) ? maybe_unserialize( $settings['products'] ) : array();
 
-		$json_ids    = array();
+		$json_ids = array();
 
 		foreach ( $product_ids as $product_id ) {
 			$product = wc_get_product( $product_id );
@@ -56,14 +56,14 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 
 		$settings_array = array(
 			array(
-				'title' => __( 'Settings', 'woocommerce' ),
+				'title' => __( 'Settings', 'happy-order-generator' ),
 				'type'  => 'title',
 				'desc'  => $message,
 				'id'    => 'hog_settings_start'
 			),
 			array(
-				'title'    => __( 'Orders per Hour', 'woocommerce' ),
-				'desc'     => __( 'The maximum number of orders to generate per hour.', 'woocommerce' ),
+				'title'    => __( 'Orders per Hour', 'happy-order-generator' ),
+				'desc'     => __( 'The maximum number of orders to generate per hour.', 'happy-order-generator' ),
 				'id'       => 'hog_orders_per_hour',
 				'css'      => 'width:100px;',
 				'value'    => ( isset( $settings['orders_per_hour'] ) ) ? $settings['orders_per_hour'] : '',
@@ -71,8 +71,8 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'desc_tip' => true,
 			),
 			array(
-				'title'             => __( 'Products', 'woocommerce' ),
-				'desc'              => __( 'The products that will be added to the generated orders. Leave empty to randomly select from all products.', 'woocommerce' ),
+				'title'             => __( 'Products', 'happy-order-generator' ),
+				'desc'              => __( 'The products that will be added to the generated orders. Leave empty to randomly select from all products.', 'happy-order-generator' ),
 				'id'                => 'hog_products',
 				'type'              => 'multiselect',
 				'class'             => 'wc-product-search',
@@ -83,13 +83,13 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'custom_attributes' => array(
 					'data-multiple' => "true",
 					'data-selected' => $data_selected
-					),
+				),
 				'desc_tip'          => true,
 			),
 			array(
-				'title'             => __( 'Min Order Products', 'woocommerce' ),
+				'title'             => __( 'Min Order Products', 'happy-order-generator' ),
 				'id'                => 'hog_min_order_products',
-				'desc'              => __( 'The minimum number of products to add to the generated orders', 'woocommerce' ),
+				'desc'              => __( 'The minimum number of products to add to the generated orders', 'happy-order-generator' ),
 				'type'              => 'number',
 				'custom_attributes' => array(
 					'min' => 1,
@@ -99,9 +99,9 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'autoload'          => false,
 			),
 			array(
-				'title'             => __( 'Max Order Products', 'woocommerce' ),
+				'title'             => __( 'Max Order Products', 'happy-order-generator' ),
 				'id'                => 'hog_max_order_products',
-				'desc'              => __( 'The maximum number of products to add to the generated orders', 'woocommerce' ),
+				'desc'              => __( 'The maximum number of products to add to the generated orders', 'happy-order-generator' ),
 				'type'              => 'number',
 				'custom_attributes' => array(
 					'min' => 1,
@@ -114,19 +114,33 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'title'    => __( 'Create User Accounts', 'woocommerce' ),
 				'desc_tip' => true,
 				'id'       => 'hog_create_users',
-				'desc'     => __( 'If enabled, accounts will be created and will randomly assigned to new orders.', 'woocommerce' ),
+				'desc'     => __( 'If enabled, accounts will be created and will randomly assigned to new orders.', 'happy-order-generator' ),
 				'type'     => 'select',
 				'options'  => array(
-					0 => __( 'No - assign existing accounts to new orders', 'woocommerce' ),
-					1 => __( 'Yes - create a new account or randomly select an existing account to assign to new orders', 'woocommerce' )
+					0 => __( 'No - assign existing accounts to new orders', 'happy-order-generator' ),
+					1 => __( 'Yes - create a new account or randomly select an existing account to assign to new orders', 'happy-order-generator' )
 				),
 				'value'    => ( isset( $settings['create_users'] ) ) ? $settings['create_users'] : 'Yes',
 				'autoload' => false,
 				'class'    => 'wc-enhanced-select'
 			),
 			array(
-				'title'    => __( 'New customer locales', 'order-generator' ),
-				'desc'     => __( 'Billing country for new users. Leave empty to randomly generate.', 'woocommerce' ),
+				'title'    => __( 'Bypass SSL verify', 'happy-order-generator' ),
+				'desc_tip' => true,
+				'id'       => 'hog_skip_ssl',
+				'desc'     => __( 'If enabled, SSL verify will be bypassed. Handy if you\'re running a local dev site.', 'happy-order-generator' ),
+				'type'     => 'select',
+				'options'  => array(
+					0 => __( 'Do not bypass SSL verify', 'happy-order-generator' ),
+					1 => __( 'Bypass SSL verify', 'happy-order-generator' )
+				),
+				'value'    => ( isset( $settings['skip_ssl'] ) ) ? $settings['skip_ssl'] : 0,
+				'autoload' => false,
+				'class'    => 'wc-enhanced-select'
+			),
+			array(
+				'title'    => __( 'New customer locales', 'happy-order-generator' ),
+				'desc'     => __( 'Billing country for new users. Leave empty to randomly generate.', 'happy-order-generator' ),
 				'id'       => 'hog_customer_locales',
 				'type'     => 'multi_select_countries',
 				'class'    => 'wc-country-search',
@@ -134,37 +148,37 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'desc_tip' => true,
 			),
 			array(
-				'title'    => __( 'Customer naming convention', 'order-generator' ),
-				'desc'     => __( 'How customers are named', 'order-generator' ),
+				'title'    => __( 'Customer naming convention', 'happy-order-generator' ),
+				'desc'     => __( 'How customers are named', 'happy-order-generator' ),
 				'id'       => 'hog_customer_naming_convention',
 				'type'     => 'select',
 				'class'    => 'wc-country-search',
 				'value'    => ( isset( $settings['customer_naming_convention'] ) ) ? $settings['customer_naming_convention'] : 'faker',
 				'options'  => array(
 					'faker'       => 'Fake names',
-					'customer_id' => 'Customer IDs (WooCustomer ID: 000)',
+					'customer_id' => 'Customer IDs (Test Customer ID: 000)',
 				),
 				'desc_tip' => true,
 			),
 			array(
-				'title'    => __( 'Email convention', 'order-generator' ),
-				'desc'     => __( 'Convention to use for email addresses', 'order-generator' ),
+				'title'    => __( 'Email convention', 'happy-order-generator' ),
+				'desc'     => __( 'Convention to use for email addresses', 'happy-order-generator' ),
 				'id'       => 'hog_customer_email_convention',
 				'type'     => 'select',
 				'class'    => 'wc-country-search',
 				'value'    => ( isset( $settings['customer_email_convention'] ) ) ? $settings['customer_email_convention'] : 'faker',
 				'options'  => array(
 					'faker'               => 'Fake email addresses',
-					'customer_id_here'    => 'WooCustomer.id.000@' . parse_url( get_bloginfo( 'url' ), PHP_URL_HOST ) . ')',
-					'customer_id_staging' => 'WooCustomer.id.000@mystagingwebsite.com',
+					'customer_id_here'    => 'TestCustomer.id.000@' . parse_url( get_bloginfo( 'url' ), PHP_URL_HOST ) . ')',
+					'customer_id_staging' => 'TestCustomer.id.000@mystagingwebsite.com',
 				),
 				'desc_tip' => true,
 			),
 			array(
-				'title'             => __( 'Completed Order Status Chance', 'order-generator' ),
+				'title'             => __( 'Completed Order Status Chance', 'happy-order-generator' ),
 				'desc_tip'          => false,
 				'id'                => 'hog_order_completed_pct',
-				'desc'              => __( '%', 'order-generator' ),
+				'desc'              => __( '%', 'happy-order-generator' ),
 				'type'              => 'number',
 				'value'             => ( isset( $settings['order_completed_pct'] ) ) ? $settings['order_completed_pct'] : '0',
 				'autoload'          => false,
@@ -175,10 +189,10 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				)
 			),
 			array(
-				'title'             => __( 'Processing Order Status Chance', 'order-generator' ),
+				'title'             => __( 'Processing Order Status Chance', 'happy-order-generator' ),
 				'desc_tip'          => false,
 				'id'                => 'hog_order_processing_pct',
-				'desc'              => __( '%', 'order-generator' ),
+				'desc'              => __( '%', 'happy-order-generator' ),
 				'type'              => 'number',
 				'value'             => ( isset( $settings['order_processing_pct'] ) ) ? $settings['order_processing_pct'] : '90',
 				'autoload'          => false,
@@ -189,10 +203,10 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				)
 			),
 			array(
-				'title'             => __( 'Failed Order Status Chance', 'order-generator' ),
+				'title'             => __( 'Failed Order Status Chance', 'happy-order-generator' ),
 				'desc_tip'          => false,
 				'id'                => 'hog_order_failed_pct',
-				'desc'              => __( '%', 'order-generator' ),
+				'desc'              => __( '%', 'happy-order-generator' ),
 				'type'              => 'number',
 				'value'             => ( isset( $settings['order_failed_pct'] ) ) ? $settings['order_failed_pct'] : '10',
 				'autoload'          => false,
@@ -201,6 +215,12 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 					'min' => 0,
 					'max' => 100
 				)
+			),
+			array(
+				'title' => __( 'Enable logging', 'happy-order-generator' ),
+				'id'    => 'hog_debug',
+				'type'  => 'checkbox',
+				'value' => $settings['enable_debug']
 			),
 			array(
 				'type' => 'sectionend',
@@ -228,6 +248,8 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 			'order_failed_pct'           => absint( $_POST['hog_order_failed_pct'] ?? 10 ),
 			'customer_naming_convention' => sanitize_text_field( $_POST['hog_customer_naming_convention'] ?? 'faker' ),
 			'customer_email_convention'  => sanitize_text_field( $_POST['hog_customer_email_convention'] ?? 'faker' ),
+			'skip_ssl'                   => absint( $_POST['hog_skip_ssl'] ?? 0 ),
+			'enable_debug'               => ( $_POST['hog_debug'] == '1' ) ? 'yes' : 'no',
 		);
 
 		/**
@@ -285,7 +307,7 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 		/**
 		 * Save the settings
 		 */
-		update_option( 'wc_order_generator_settings', $settings );
+		update_option( 'happy_order_generator_settings', $settings );
 	}
 }
 

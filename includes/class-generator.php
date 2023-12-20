@@ -17,7 +17,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Generator {
 
+	private array $available_payment_methods = array( 'bacs' );
+
 	private string $error_message = '';
+
+	/**
+	 * @var bool
+	 */
+	private bool $order_contains_subscription = false;
 
 	/**
 	 * @var array|false|mixed|null
@@ -53,9 +60,9 @@ class Generator {
 	public function __construct() {
 
 		$this->settings = get_option( 'wc_order_generator_settings', array() );
+
+
 	}
-
-
 
 
 	/**
@@ -69,36 +76,35 @@ class Generator {
 	public function generate_order(): bool {
 
 		/**
-		 * Selects products to add to the cart
+		 * We log as we go but only write out if there is an error
 		 */
-		$product     = new Product();
-		$product_ids = $product->get_products_for_cart();
-		$this->error_message .= 'Adding ' . count( $product_ids ) . ' products to the cart';
+		$this->error_message = 'Starting order generation' . PHP_EOL;
 
 		/**
 		 * Sets up the customer to use for checkout
 		 */
-		$customer = new Customer();
+		$customer            = new Customer();
 		$this->error_message .= 'Customer user id ' . $customer->get_id() . PHP_EOL;
 
 		/**
-		 * Switches to the assigned customer. We're still not sure if this is necessary
-		 * but it seems to be working okay - the only place this comes into play is
-		 * after checkout, during the order processing.
+		 * Selects products to add to the cart
 		 */
-		$current_user = get_current_user_id();
-		wp_set_current_user( $customer->get_id() );
-
-		Logger::log( 'Starting order generation' );
+		$product             = new Product();
+		$cart_products       = $product->get_products_for_cart();
+		$this->order_contains_subscription = $this->check_cart_for_subscription( $cart_products );
+		$this->error_message .= 'Adding ' . count( $cart_products ) . ' products to the cart'  . PHP_EOL;
 
 		$order_builder = new Order_Builder();
 
-		foreach ( $product_ids as $product_id ) {
-			$result = $order_builder->add_to_cart( $product_id );
-			//Logger::log( 'Product added to cart and said: ' . print_r( $result, true ));
-		}
+		$add_to_cart_response = $order_builder->add_to_cart( $cart_products );
 
-		//todo Can we check here to see if we have a valid cart, because if not we might as well bail?
+		if( ! $add_to_cart_response ){
+			Logger::log( 'Error adding to cart' );
+			Logger::log( $this->error_message );
+			return false;
+		}else{
+			$this->available_payment_methods = $add_to_cart_response;
+		}
 
 		/**
 		 * What payment method to use for this order.
@@ -106,116 +112,70 @@ class Generator {
 		$options['payment_method'] = $this->get_payment_method();
 
 		/**
-		 * Set the shipping method
-		 * todo - remove?? Shipping method is reassigned during checkout through Store API
-		 */
-		$options['shipping_method']       = 'free_shipping';
-		$options['shipping_method_title'] = 'Free Shipping';
-
-		/**
 		 * Set the desired final status of the order. Options are processing, completed or failed.
+		 * BACS should go to on-hold, but we don't want that, so we'll switch that too
 		 */
-		$status                  = $this->get_final_status();
+		$status = $this->get_final_status();
 
 		/**
 		 * Set up options to add to checkout data
 		 */
-		$options['user_id']               = $customer->get_id();
+		$options['user_id'] = $customer->get_id();
+
 		/**
 		 * Adds payment data to be used for checkout
 		 */
-		$gateway = new Gateway_Integration_Stripe();
-		$options['payment_data'] = $gateway->get_payment_data( $customer->get_id(), $status );
+		if ( 'stripe' === $options['payment_method'] ) {
+			$gateway                 = new Gateway_Integration_Stripe();
+			$options['payment_data'] = $gateway->get_payment_data( $customer->get_id(), $status );
+		}
+
+		$options['payment_data']['final_status'] = $status;
 
 		/**
 		 * Checkout, with additional options, get back the order and
 		 * convert it into a regular order object
 		 */
-		$checkout_result = $order_builder->do_checkout( $options );
-		$order    = json_decode( $checkout_result['body'] );
-		$order_id = $order->order_id;
-		$order = wc_get_order( $order_id );
-
+		$order = $order_builder->do_checkout( $options );
 
 		// Bail if we're broken
-		if ( empty( $order ) ) {
-			Logger::log( 'Order creation failed' );
-			$body = json_decode( $checkout_result['body'] );
-			Logger::log( 'An error occurred: ' . $body->code . '. ' . $body->message );
-			return false;
+		if ( is_wp_error( $order ) ) {
+			Logger::log( $this->error_message );
+			Logger::log( 'Order creation failed to checkout.' );
+			Logger::log( $order );
 		}
 
 		/**
-		 * Here we hook up subscriptions if the order contains a subscription product
-		 * The Store API doesn't appear to do that yet, or maybe we need to enter more into the
-		 * extensions' data...
+		 * Set the fake customer IP.
 		 */
-		do_action( 'woocommerce_checkout_order_processed', $order_id, $options );
+		$order->set_customer_ip_address( $customer->get_customer_ip() );
 
-		/**
-		 * Make sure correct Stripe payment data is in place on the order so that we can generate
-		 * an order source when we process the payment in Stripe
-		 */
-		$order->update_meta_data( '_stripe_customer_id', $options['payment_data']['stripe_customer_id'] );
-		$order->update_meta_data( '_stripe_source_id', $options['payment_data']['stripe_source_id'] );
-		/**
-		 * Make sure all our changes are in place
-		 */
-		$order->save();
-
-		/**
-		 * If we're using Stripe Payment Gateway for this order we need to
-		 * pay for it. We do not need to mark it as paid.
-		 */
-		if ( 'stripe' === $options['payment_method'] ) {
-
-			if ( $order->get_status() !== 'failed' ) {
-
-				Logger::log( 'Processing Stripe order payment' );
-
-				/**
-				 * Handling exceptions...
-				 */
-				try{
-					$stripe = new WC_Gateway_Stripe();
-					$stripe->process_payment( $order->get_id(), true, true, false, true );
-				}catch( Exception $exception ){
-					Logger::log( 'Order creation succeeded but Stripe order payment failed. Message was: ' . $exception->getMessage() );
-					$order->update_status( 'failed' );
-				}
-			}
+		if( 'failed' == $status ){
+			do_action( 'order_generator_order_failed', $order, $options );
+		}else{
+			do_action( 'order_generator_order_processed', $order, $options );
 		}
 
 		/**
-		 * If we're using bacs then mark the order as paid if it is to succeed.
+		 * If we're using BACS then mark the order as paid if it is to succeed.
 		 */
-		if ( 'bacs' === $options['payment_method'] && 'failed' !== $status ) {
-			$order->payment_complete();
-		}
 
-		/**
-		 * Set the order status correctly
-		 */
 		if ( 'bacs' === $options['payment_method'] ) {
-			if ( $status ) {
-				$order->update_status( $status );
-			} else {
+			if( $status && $status !== 'failed' ){
 				$order->payment_complete();
-				$order->update_status( $status );
 			}
+			$order->update_status( $status );
+			$order->save();
 		}
-
-		/**
-		 * Reset current user
-		 */
-		wp_set_current_user( $current_user );
 
 		/**
 		 * Add order note to generated order to identify it as generated
 		 */
 		$order->add_order_note( __( 'Order created by Order Generator', 'happy-order-generator' ) );
+		$order->update_meta_data( '_happy_order_generator_order', 1 );
+		$order->save();
 
-		Logger::log( 'Order ID ' . $order_id . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'], 'order-generator' );
+		Logger::log( __('Order ID ' . $order->get_id() . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'], 'happy-order-generator' ) );
 
 		return true;
 	}
@@ -230,8 +190,43 @@ class Generator {
 	public function get_payment_method() {
 
 		$hog_payment_methods = apply_filters( 'order_generator_supported_gateways', array( 'bacs' ) );
-		//return array_rand( array_flip( $hog_payment_methods ) );
+
+		/**
+		 * If this order contains a subscription, we want to use Stripe if it is available.
+		 */
+		if ( $this->order_contains_subscription && isset( $hog_payment_methods['stripe'] ) && in_array( 'stripe', $this->available_payment_methods ) ) {
+			return apply_filters( 'hog_subscription_payment_method', 'stripe' );
+		}
+
+		/**
+		 * Make sure the methods are all available for this order
+		 */
+		$hog_payment_methods = array_intersect( $hog_payment_methods, $this->available_payment_methods );
+
 		return 'stripe';
+
+		return apply_filters('hog_payment_method', array_rand( array_flip( $hog_payment_methods ) ) );
+	}
+
+	/**
+	 * Checks items in the cart for a subscription. We don't want manual renewals cluttering things
+	 * up, so we're going to make sure subs don't go through as bacs payments.
+	 *
+	 * @param $cart_items
+	 *
+	 * @return bool True if cart contains a subscription.
+	 */
+	private function check_cart_for_subscription( $cart_items ){
+
+		foreach ( $cart_items as $cart_item ) {
+
+			$product = wc_get_product( $cart_item['id'] );
+			if ( $product->is_type( 'subscription' ) || $product->is_type( 'variable-subscription' ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

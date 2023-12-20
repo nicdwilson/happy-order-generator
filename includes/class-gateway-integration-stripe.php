@@ -14,12 +14,33 @@ use WC_Stripe_API;
 use WC_Stripe_Exception;
 use WC_Stripe_Helper;
 use WC_Stripe_Payment_Gateway;
+use function Crontrol\Schedule\add;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
 class Gateway_Integration_Stripe {
+
+	/**
+	 * An array of Stripe test card which will fail.
+	 *
+	 * @var array|string[]
+	 */
+	private array $test_card_fails = array(
+		'4000000000000002',
+		'4000000000009995',
+		'4000000000009987',
+		'4000000000009979',
+		'4000000000000069',
+		'4000000000000127',
+		'4000000000000119',
+		'4100000000000019',
+		'4000000000004954',
+		'4000000000000101',
+		'4000000000000010',
+		'4000000000000259'
+	);
 
 	/**
 	 * Gateway The instance of Gateway
@@ -60,14 +81,16 @@ class Gateway_Integration_Stripe {
 		 * Add Stripe gateway support
 		 */
 		add_filter( 'order_generator_supported_gateways', array( $this, 'add_stripe_support' ) );
-		add_action( 'woocommerce_rest_checkout_process_payment_with_context', array( $this, 'pay_test' ), 99, 2 );
 
-		//$thing = new \WC_Stripe_Blocks_Support();
-		//remove_action( 'woocommerce_rest_checkout_process_payment_with_context', [ $thing, 'add_stripe_intents' ], 9999, 2 );
+		/**
+		 * Failed orders going through Stripe are handled by Happy Order Generator, so we intercept them here
+		 */
+		add_action( 'woocommerce_rest_checkout_process_payment_with_context', array( $this, 'do_failure_check' ), 10, 2 );
 
-
-		//apply_filters( 'woocommerce_payment_gateways', array( $this, 'add_hog_gateway' ) );
-
+		/**
+		 * Handle generated failed orders
+		 */
+		add_action( 'order_generator_order_failed', array( $this, 'do_checkout_fail' ), 10, 2 );
 	}
 
 
@@ -111,39 +134,86 @@ class Gateway_Integration_Stripe {
 	}
 
 
-	public function pay_test( $context, &$result ) {
+	/**
+	 * Sets the payment result on orders which should fail.
+	 * This allows us to bypass Stripe's usual processing and
+	 * add our own order notes.
+	 *
+	 * @param $context
+	 * @param $payment_result
+	 *
+	 * @return void
+	 */
+	public function do_failure_check( $context, $payment_result ): void {
+
+		if ( $context->payment_data['final_status'] !== 'paid' ) {
+			$payment_result->set_status( 'pending' );
+		}
+	}
+
+
+	/**
+	 * Handles payment of Stripe orders which are supposed to fail. By
+	 * doing this here, we get to add our own order notes.
+	 *
+	 * @param $context
+	 * @param $result
+	 *
+	 * @return void
+	 */
+	public function do_checkout_fail( $order, $options ): void {
+
+		/**
+		 * Bail if the order has already failed
+		 */
+		if ( $order->get_status() === 'failed' || $order->payment_method !== 'stripe' ) {
+			return;
+		}
 
 		$this->stripe_helper = new WC_Stripe_Helper();
 
-		$order          = $context->order;
-		$payment_intent = $this->setup_payment_intent( $context->payment_data['stripe_source'], $context->payment_data['stripe_customer'], $order );
+		$payment_intent = $this->setup_payment_intent( $options['payment_data']['stripe_source_id'], $options['payment_data']['stripe_customer_id'], $order );
 
-		Logger::log( 'Stripe payment intent ' . $payment_intent->id );
+		if ( $payment_intent->id ) {
 
-		$order->add_order_note(
-			sprintf(
-			/* translators: $1%s payment intent ID */
-				__( 'Stripe payment intent created (Payment Intent ID: %1$s)', 'order-generator' ),
-				$payment_intent->id
-			)
-		);
+			$order->add_order_note(
+				sprintf(
+				/* translators: $1%s payment intent ID */
+					__( 'Stripe payment intent created (Payment Intent ID: %1$s)', 'happy-order-generator' ),
+					$payment_intent->id
+				)
+			);
 
-		$this->confirm_payment_intent( $payment_intent->id, $context->payment_data['stripe_source'] );
+			$response = $this->confirm_payment_intent( $payment_intent->id, $options['payment_data']['stripe_source_id'] );
 
-		$order->update_meta_data( '_stripe_intent_id', $payment_intent->id );
-		$order->update_meta_data( '_stripe_card_id', $context->payment_data['stripe_source'] );
+			/**
+			 * We are expecting an error response. The card number used should
+			 * have been from the failed card set.
+			 */
+			if ( $response->error ) {
 
-		$payment_details = $context->payment_data;
-		$payment_details['setup_intent_secret'] = $payment_intent->client_secret;
-		$payment_details['save_payment_method'] = 1;
-		$result->set_payment_details( $payment_details );
+				$order->add_order_note(
+					sprintf(
+					/* translators: $1%s Stripe error_code $2%s Stripe error message */
+						__( 'Test order note: Stripe payment failed with the error code <code>%1$s</code>. The customer might have seen "%2$s"', 'happy-order-generator' ),
+						$response->error->code,
+						$response->error->message
+					)
+				);
+			}
+		}
 
-		$result->set_status( 'success' );
-		$order->save();
+		/**
+		 * We always just fail anyway
+		 */
+		$order->update_status( 'failed' );
 	}
 
 	/**
-	 * @param $order
+	 * Returns the payment data required for Stripe payment to be processed
+	 * via the store-api checkout.
+	 *
+	 * @param string $user_id
 	 * @param $final_status
 	 *
 	 * @return mixed|void
@@ -154,7 +224,7 @@ class Gateway_Integration_Stripe {
 		$this->stripe_helper = new WC_Stripe_Helper();
 
 		$output = array(
-			'final_status'       => 'paid',
+			'final_status'       => '',
 			'stripe_source_id'   => '',
 			'stripe_customer_id' => ''
 		);
@@ -181,8 +251,6 @@ class Gateway_Integration_Stripe {
 				}
 			}
 
-			Logger::log( 'Logging Stripe Customer data: ' . $stripe_customer_id );
-
 			$payment_method = $this->get_payment_method( $final_status );
 
 			if ( false !== strpos( $payment_method->id, 'cus_', 0 ) ) {
@@ -199,23 +267,22 @@ class Gateway_Integration_Stripe {
 			 * If the payment method failed, mark the order as failed
 			 * and bail immediately, otherwise setup a payment intent
 			 */
-			//if ( isset( $payment_method_id ) && ! empty( $payment_method_id ) ) {
-			//Logger::log( 'Stripe order successfully paid' );
-			$output['stripe_source_id']   = $payment_method_id;
-			$output['stripe_customer_id'] = $stripe_customer_id;
-			//} else {
-			//Logger::log( 'There was a problem with the Stripe order payment.' );
-			//Logger::log( print_r( $payment_method, true ) );
-			//$output['final_status'] = 'failed';
-			//}
+			if ( isset( $payment_method_id ) && ! empty( $payment_method_id ) ) {
+				$output['stripe_source_id']   = $payment_method_id;
+				$output['stripe_customer_id'] = $stripe_customer_id;
+			} else {
+				Logger::log( 'There was a problem with the Stripe order payment.' );
+				Logger::log( print_r( $payment_method, true ) );
+				$output['final_status'] = 'failed';
+			}
 		}
 
 		return $output;
-
 	}
 
-
 	/**
+	 * When using front-end includes and legacy process payment methods.
+	 *
 	 * @param $order
 	 * @param $final_status
 	 *
@@ -268,20 +335,20 @@ class Gateway_Integration_Stripe {
 				Logger::log( 'Stripe order successfully paid' );
 			} else {
 				Logger::log( 'There was a problem with the Stripe order payment.' );
-				Logger::log( print_r( $payment_method, true ) );
+				Logger::log( $payment_method );
 				$order->update_status( 'failed' );
 
 				return $order;
 			}
 
 			$order->update_meta_data( '_stripe_source_id', $payment_method_id );
-			$payment_intent = $this->setup_payment_intent(  $payment_method_id, $stripe_customer_id, $order );
+			$payment_intent = $this->setup_payment_intent( $payment_method_id, $stripe_customer_id, $order );
 
 			if ( isset( $payment_intent ) && ! empty( $payment_intent ) ) {
 				Logger::log( 'Stripe payment intent ' . $payment_intent->id );
 			} else {
 				Logger::log( 'There was a problem with the Stripe payment intent.' );
-				Logger::log( print_r( $payment_method, true ) );
+				Logger::log( $payment_method );
 				$order->update_status( 'failed' );
 
 				return $order;
@@ -292,7 +359,7 @@ class Gateway_Integration_Stripe {
 			$order->add_order_note(
 				sprintf(
 				/* translators: $1%s payment intent ID */
-					__( 'Stripe payment intent created (Payment Intent ID: %1$s)', 'order-generator' ),
+					__( 'Stripe payment intent created (Payment Intent ID: %1$s)', 'happy-order-generator' ),
 					$payment_intent->id
 				)
 			);
@@ -436,10 +503,11 @@ class Gateway_Integration_Stripe {
 		if ( $final_status != 'failed' ) {
 			$card_number = '4242424242424242';
 		} else {
-			$card_number = '4000000000009995';
+			$card_number = array_rand( array_flip( $this->test_card_fails ) );
 		}
 
 		$request = array(
+			'type' => 'card',
 			'card' => array(
 				'number'    => $card_number,
 				'exp_month' => 8,
@@ -449,6 +517,10 @@ class Gateway_Integration_Stripe {
 		);
 
 		$response = WC_Stripe_API::request( $request, 'payment_methods' );
+
+		if ( strpos( $response->id, 'pm_' ) !== false ) {
+			return $response;
+		}
 
 		/**
 		 * Can throw a Stripe Exception

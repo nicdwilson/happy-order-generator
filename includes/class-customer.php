@@ -172,10 +172,6 @@ class Customer {
 		} else {
 			$this->user_id = $this->create_user();
 		}
-		/**
-		 * todo remove after testing
-		 */
-		$this->user_id = $this->create_user();
 		return $this->user_id;
 	}
 
@@ -220,7 +216,7 @@ class Customer {
 		if ( 'faker' === $this->settings['customer_naming_convention'] ) {
 			$first_name = $faker->firstName;
 		} else {
-			$first_name = 'WooCustomer';
+			$first_name = 'Test Customer';
 		}
 
 		return $first_name;
@@ -254,10 +250,10 @@ class Customer {
 
 		switch ( $this->settings['customer_email_convention'] ) {
 			case 'customer_id_staging':
-				$email = 'customer.id.' . $user_id . '@mystagingsite.com';
+				$email = 'test.customer.id.' . $user_id . '@mystagingsite.com';
 				break;
 			case 'customer_id_here':
-				$email = 'customer.id.' . $user_id . '@' . parse_url( get_bloginfo( 'url' ), PHP_URL_HOST );
+				$email = 'test.customer.id.' . $user_id . '@' . parse_url( get_bloginfo( 'url' ), PHP_URL_HOST );
 				break;
 			default:
 				$email = $faker->email;

@@ -8,7 +8,7 @@
  * Author URI: https://woocommerce.com
  * License: GPLv3
  * License URI: http://www.gnu.org/licenses/gpl-3.0
- * Text Domain: wc-order-generator
+ * Text Domain: happy-order-generator
  * Domain Path: /languages
  * Tested up to: 6.2
  *
@@ -28,7 +28,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * @package Order_Generator
+ * @package Happy_Order_Generator
  */
 
 namespace Happy_Order_Generator;
@@ -59,7 +59,7 @@ class Order_Generator {
 	/**
 	 * Main Order_Generator Instance
 	 *
-	 * Ensures only one instance of Order_Simulator is loaded or can be loaded.
+	 * Ensures only one instance of Order_Generator is loaded or can be loaded.
 	 *
 	 * @return Order_Generator instance
 	 * @since  1.0.0
@@ -92,8 +92,9 @@ class Order_Generator {
 		 */
 		add_action( 'woocommerce_store_api_checkout_update_customer_from_request', array( $this, 'log_customer_in' ), 10, 2 );
 
-		add_action('plugins_loaded', array( 'Happy_Order_Generator\Cron_Jobs', 'instance' ));
+		add_action('action_scheduler_init', array( 'Happy_Order_Generator\Cron_Jobs', 'instance' ));
 		add_action('plugins_loaded', array( 'Happy_Order_Generator\Gateway_Integration_Stripe', 'instance' ));
+
 	}
 
 	public function add_setting_page(): array {
@@ -125,7 +126,9 @@ class Order_Generator {
 	 * @return array
 	 */
 	public static function get_settings(): array {
-		return get_option( 'wc_order_generator_settings', array() );
+
+		$settings = get_option( 'happy_order_generator_settings', array() );
+		return ( is_array( $settings ) ) ? $settings : array();
 	}
 
 	/**

@@ -1,8 +1,18 @@
 <?php
+/**
+ * Order Builder class uses the Store API.
+ */
 
 namespace Happy_Order_Generator;
 
+use WP_Error;
+
 class Order_Builder {
+
+	/**
+	 * @var bool
+	 */
+	private bool $skip_ssl = false;
 
 	/**
 	 * @var string
@@ -16,15 +26,21 @@ class Order_Builder {
 
 	public function __construct() {
 
+		$settings = Order_Generator::get_settings();
+		if ( $settings['skip_ssl'] === 1 ) {
+			$this->skip_ssl = true;
+		}
+
 		$this->nonce = $this->get_nonce();
 
-		if( $this->nonce === false ){
-			sleep(3);
+
+		if ( $this->nonce === false ) {
+			sleep( 3 );
 			$this->nonce = $this->get_nonce();
 		}
 
 		if ( ! $this->get_nonce() ) {
-			//todo log error and bail
+			Logger::log( 'Unable to fetch nonce when initialising the order builder.' );
 		}
 
 	}
@@ -36,24 +52,32 @@ class Order_Builder {
 	 */
 	public function get_nonce(): bool|string {
 
-		$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/cart';
+		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/cart';
 		$args = array(
 			'timeout' => 20
 		);
 
+		if ( $this->skip_ssl ) {
+			add_filter( 'https_ssl_verify', '__return_false' );
+		}
 		$response = wp_safe_remote_get( $url, $args );
-		$headers  = wp_remote_retrieve_headers( $response );
+		remove_filter( 'https_ssl_verify', '__return_false' );
+
+		$headers = wp_remote_retrieve_headers( $response );
 
 		if ( is_wp_error( $response ) ) {
 			$this->handle_error_response( $response );
 		}
 
-		$nonce = ( isset( $headers['nonce'] ) ) ? $headers['nonce'] : false;
-
-		return $nonce;
+		return ( isset( $headers['nonce'] ) ) ? $headers['nonce'] : false;
 	}
 
-	public function get_cart() {
+	/**
+	 * Returns the status of the cart
+	 *
+	 * @return string
+	 */
+	public function get_cart(): string {
 
 		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/cart';
 		$args = array(
@@ -63,98 +87,109 @@ class Order_Builder {
 			'timeout' => 20
 		);
 
+		if ( $this->skip_ssl ) {
+			add_filter( 'https_ssl_verify', '__return_false' );
+		}
 		$response = wp_safe_remote_get( $url, $args );
+		remove_filter( 'https_ssl_verify', '__return_false' );
 
 		if ( is_wp_error( $response ) ) {
 			$this->handle_error_response( $response );
 		}
 
-		$body = wp_remote_retrieve_body( $response );
-
-		return $body;
+		return json_decode( wp_remote_retrieve_body( $response ) );
 	}
 
-	public function do_checkout( $options ) {
+	/**
+	 * Do checkout, creating the order
+	 *
+	 * @param array $options
+	 *
+	 * options[user_id]
+	 * $options['payment_method']
+	 *
+	 * @return object
+	 */
+	public function do_checkout( $options ): object {
 
 		$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/checkout';
 
-		$usermeta = get_userdata( $options['user_id'] );
+		$user_meta = get_userdata( $options['user_id'] );
 
 		$body = array(
 			'billing_address'  => array(
-				'first_name' => $usermeta->first_name,
-				'last_name'  => $usermeta->last_name,
+				'first_name' => $user_meta->first_name,
+				'last_name'  => $user_meta->last_name,
 				'company'    => '',
-				'address_1'  => $usermeta->billing_address_1,
+				'address_1'  => $user_meta->billing_address_1,
 				'address_2'  => '',
-				"city"       => $usermeta->billing_city,
-				"state"      => $usermeta->billing_state,
-				"postcode"   => $usermeta->billing_postcode,
-				"country"    => $usermeta->billing_country,
-				"email"      => $usermeta->billing_email,
-				"phone"      => $usermeta->billing_phone
+				"city"       => $user_meta->billing_city,
+				"state"      => $user_meta->billing_state,
+				"postcode"   => $user_meta->billing_postcode,
+				"country"    => $user_meta->billing_country,
+				"email"      => $user_meta->billing_email,
+				"phone"      => $user_meta->billing_phone
 			),
 			'shipping_address' => array(
-				'first_name' => $usermeta->first_name,
-				'last_name'  => $usermeta->last_name,
+				'first_name' => $user_meta->first_name,
+				'last_name'  => $user_meta->last_name,
 				'company'    => "",
-				'address_1'  => $usermeta->shipping_address_1,
+				'address_1'  => $user_meta->shipping_address_1,
 				'address_2'  => '',
-				'city'       => $usermeta->shipping_city,
-				'state'      => $usermeta->shipping_state,
-				'postcode'   => $usermeta->shipping_postcode,
-				'country'    => $usermeta->shipping_country,
+				'city'       => $user_meta->shipping_city,
+				'state'      => $user_meta->shipping_state,
+				'postcode'   => $user_meta->shipping_postcode,
+				'country'    => $user_meta->shipping_country,
 			),
 			'customer_note'    => '',
 			'create_account'   => true,
 			'payment_method'   => $options['payment_method'],
-			'payment_data'     => array()
-			/**
-				array(
-					'key' => 'stripe_source',
-					'value'=> $options['payment_data']['stripe_source_id'],
-				),
-				array(
-					'key' => 'stripe_customer',
-					'value'=> $options['payment_data']['stripe_customer_id'],
-				),
-				array(
-					'key' => 'billing_email',
-					'value'=> $usermeta->billing_email,
-				),
-				array(
-					'key' => 'billing_first_name',
-					'value'=> $usermeta->first_name,
-				),
-				array(
-					'key' => 'billing_last_name',
-					'value'=> $usermeta->last_name,
-				),
-				array(
-					'key' => 'paymentMethod',
-					'value'=> $options['payment_method'],
-				),
-				array(
-					'key' => 'paymentRequestType',
-					'value'=> 'cc',
-				),
-				array(
-					'key' => 'wc-stripe-new-payment-method',
-					'value'=> true,
-				),
-			)
-			 */
-			/**
-
-				'billing_email'                => $usermeta->billing_email,
-				'billing_first_name'           => $usermeta->first_name,
-				'billing_last_name'            => $usermeta->last_name,
-				'paymentMethod'                => $options['payment_method'],
-				'paymentRequestType'           => 'cc',
-				'wc-stripe-new-payment-method' => true
-			)
-		*/
 		);
+
+		/**
+		 * todo should be a do_action
+		 */
+		if ( 'stripe' === $options['payment_method'] ) {
+
+			$body['payment_data'] = array(
+				array(
+					'key'   => 'stripe_source',
+					'value' => $options['payment_data']['stripe_source_id'],
+				),
+				array(
+					'key'   => 'stripe_customer',
+					'value' => $options['payment_data']['stripe_customer_id'],
+				),
+				array(
+					'key'   => 'billing_email',
+					'value' => $user_meta->billing_email,
+				),
+				array(
+					'key'   => 'billing_first_name',
+					"value" => $user_meta->first_name,
+				),
+				array(
+					"key"   => "billing_last_name",
+					"value" => $user_meta->last_name
+				),
+				array(
+					"key"   => "paymentMethod",
+					"value" => "stripe"
+				),
+				array(
+					"key"   => "paymentRequestType",
+					"value" => "cc"
+				),
+				array(
+					"key"   => "wc-stripe-new-payment-method",
+					"value" => true
+				),
+				array(
+					"key"   => "final_status",
+					"value" => ( $options['payment_data']['final_status'] === 'failed' ) ? '' : 'paid'
+				),
+			);
+		}
 
 		$args = array(
 			'headers' => array(
@@ -165,18 +200,54 @@ class Order_Builder {
 			'timeout' => 20
 		);
 
-		$response = wp_safe_remote_post( $url, $args );
+		$response_body = $this->get_post_response( $url, $args );
 
-		if ( is_wp_error( $response ) ) {
-			$this->handle_error_response( $response );
+		$response_object = json_decode( $response_body );
+
+		if ( ! $response_object->order_id ) {
+			//todo something went wrong here
 		}
 
-		$checkout_data = wp_remote_retrieve_body( $response );
+		$order_id = $response_object->order_id;
 
-		return $response;
+		$order = wc_get_order( $order_id );
 
+		// Bail if we're broken
+		if ( ! is_a( $order, 'WC_Order' ) ) {
+
+			$message = 'Order creation failed at checkout.\\n';
+
+			if ( $response_object->code ) {
+				$code = $response_object->code;
+			} else {
+				$code = 'Unknown error';
+				//todo fix?
+				$message .= sanitize_text_field( $response_body );
+			}
+
+			if ( $response_object->code ) {
+				$message .= 'An error occurred: ' . sanitize_text_field( $response_object->message );
+			}
+			if ( 'rest_invalid_param' === $code ) {
+				$message .= 'Invalid data was returned.\\n';
+			}
+
+			if ( strpos( $code, '_missing_' ) !== false ) {
+				$message .= 'Data is missing. We provided:\\n';
+				$message .= json_encode( $body );
+			}
+
+			$order = new WP_Error( $code, $message );
+		}
+
+		return $order;
 	}
 
+	/**
+	 * Return the order ID of the current order from the store api.
+	 *
+	 * @return false|mixed
+	 */
 	public function get_checkout_order_id() {
 
 		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/checkout';
@@ -188,16 +259,11 @@ class Order_Builder {
 			'timeout' => 20
 		);
 
-		$response = wp_safe_remote_get( $url, $args );
+		$response_body = $this->get_post_response( $url, $args );
 
-		if ( is_wp_error( $response ) ) {
-			$this->handle_error_response( $response );
-			return false;
-		}
+		$body = json_decode( wp_remote_retrieve_body( $response_body ) );
 
-		$body = json_decode( wp_remote_retrieve_body( $response ) );
-
-		if( is_array( $body ) && isset( $body['order_id'] ) && !empty( $body['order_id'] ) ){
+		if ( is_array( $body ) && isset( $body['order_id'] ) && ! empty( $body['order_id'] ) ) {
 			return $body['order_id'];
 		}
 
@@ -205,36 +271,105 @@ class Order_Builder {
 	}
 
 
-	public function add_to_cart( $product_id ) {
+	/**
+	 * Add to the current cart using the Store API batch endpoint. Requires an array
+	 * of cart items.
+	 *
+	 * todo the response from this can get pretty big, we may need to limit
+	 * output or the number of cart items maximum
+	 *
+	 *
+	 * @param array $cart_items
+	 *
+	 * @return array|false The payment methods available for the cart or false on Error
+	 */
+	public function add_to_cart( array $cart_items = array() ): array|false {
 
-		if( $product_id === 0 ){
-			return '';
+		if ( empty( $cart_items ) ) {
+			return false;
 		}
 
-		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/cart/add-item?id=' . $product_id . '&quantity=1';
+		$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/batch';
+
+		$body['requests'] = array();
+
+		foreach ( $cart_items as $cart_item ) {
+
+			$body['requests'][] = array(
+
+				'path'    => '/wc/store/v1/cart/add-item',
+				'method'  => 'POST',
+				'cache'   => 'no-store',
+				'body'    => $cart_item,
+				'headers' => array(
+					'Nonce' => $this->nonce
+				)
+			);
+		}
+
 		$args = array(
 			'headers' => array(
 				'nonce' => $this->nonce
 			),
-			'timeout' => 20
+			'timeout' => 20,
+			'body'    => $body
 		);
 
-		$response = wp_safe_remote_post( $url, $args );
+		$response_body = $this->get_post_response( $url, $args );
 
-		if ( is_wp_error( $response ) ) {
-			Logger::log( 'Unable to fetch nonce during add to cart.' );
-			Logger::log( print_r( $response, true ));
-			return $response;
+		/**
+		 * This is not an error but could still be an unexpected response.
+		 * Check cart contents and bail if we're broken.
+		 */
+		$cart = json_decode( $response_body );
+
+		if ( ! isset( $cart->responses[0]->body->items[0] ) ) {
+			Logger::log( 'Unexpected response from add to cart' );
+			Logger::log( 'REQUEST' );
+			Logger::log( $cart_items );
+			Logger::log( 'RESPONSE' );
+			Logger::log( $cart );
+
+			return false;
 		}
 
-		$this->cookies = $response['cookies'];
+		/**
+		 * Get the payment method
+		 */
+		$assigned_payment_methods = $cart->responses[0]->body->payment_methods;
+		for ( $i = 0; $i < count( $cart->responses ); $i ++ ) {
+			if ( $cart->responses[ $i ]->body->payment_methods ) {
+				$assigned_payment_methods = array_intersect( $cart->responses[ $i ]->body->payment_methods, $assigned_payment_methods );
+			}
+		}
 
-		$body = wp_remote_retrieve_body( $response );
-
-		return $body;
-
+		return $assigned_payment_methods;
 	}
 
+	private function get_post_response( $url, $args ) {
+
+		if ( $this->skip_ssl ) {
+			add_filter( 'https_ssl_verify', '__return_false' );
+		}
+		$response = wp_safe_remote_post( $url, $args );
+		remove_filter( 'https_ssl_verify', '__return_false' );
+
+		if ( is_wp_error( $response ) ) {
+			$this->handle_error_response( $response );
+		} else {
+			$this->cookies = $response['cookies'];
+		}
+
+		return wp_remote_retrieve_body( $response );
+	}
+
+	/**
+	 * Handle error logging for errors.
+	 *
+	 * @param $response
+	 *
+	 * @return void
+	 */
 	private function handle_error_response( $response ) {
 		Logger::log( 'Error occurred during order build.' . $response->get_error_message() );
 	}

@@ -1,7 +1,7 @@
 <?php
 /**
-*
-*/
+ *
+ */
 
 namespace Happy_Order_Generator;
 
@@ -12,6 +12,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Cron_Jobs {
+
+	private string $action_hook = 'create_happy_orders';
+
+	/**
+	 * @var array
+	 */
+	private array $settings;
 
 
 	/**
@@ -45,48 +52,74 @@ class Cron_Jobs {
 	 */
 	public function __construct() {
 
-		if ( ! wp_next_scheduled( 'hog_generate_scheduled_orders' ) ) {
-			wp_schedule_event( time(), 'hourly', 'hog_generate_scheduled_orders' );
+		$this->setup_action_scheduler();
+
+		add_action( 'create_happy_orders', array( $this, 'create_orders') , 10, 1 );
+	}
+
+	public function setup_action_scheduler() {
+
+		$this->settings = Order_Generator::get_settings();
+
+		if( empty( $this->settings ) ){
+			return;
 		}
 
-		add_action( 'hog_generate_scheduled_orders', array( $this, 'create_scheduled_orders' ) );
-		add_action( 'hog_generate_orders', array( $this, 'generate_batch' ) );
+		$args['batch_size']  = $this->get_batch_size();
+		$interval_in_seconds = $this->get_interval_in_seconds();
+
+		$this->settings['batch_size'] = ( isset( $this->settings['batch_size'] ) ) ? $this->settings['batch_size'] : 0;
+		$this->settings['interval']   = ( isset( $this->settings['interval'] ) ) ? $this->settings['interval'] : 0;
+
+		//todo if current action is okay, leave it.
+		if ( $this->settings['batch_size'] == $args['batch_size'] && $this->settings['interval'] = $interval_in_seconds ) {
+			if ( as_has_scheduled_action( $this->action_hook ) ) {
+				return false;
+			}
+		}
+
+		as_unschedule_all_actions( $this->action_hook );
+
+		$result = as_schedule_recurring_action( time(), $interval_in_seconds, $this->action_hook, $args, 'happy-order-generator', true );
+
+		$this->settings['batch_size'] = $args['batch_size'];
+		$this->settings['interval']   = $interval_in_seconds;
+
+		update_option( 'wc_order_generator_settings', $this->settings );
+
+		return true;
 	}
 
 	/**
-	 * This function creates the actions in Action Scheduler. It runs each hour, and sets up the actions
-	 * required for tha hour only, to create the orders required in that hour in hopefully regularly spaced batches.
+	 * Get the schedule interval
 	 *
-	 * @return void
+	 * @return int
 	 */
-	public function create_scheduled_orders(): void {
+	private function get_interval_in_seconds(): int {
 
-		$settings = Order_Generator::get_settings();
-		$progress = get_option( 'hog_progress_indicator', false );
-		$batches  = 7;
+		$interval = 60;
 
-		if ( false === $progress ) {
-			$progress = 0;
-			update_option( 'hog_progress_indicator', 0 );
+		if ( $this->settings['orders_per_hour'] < 60 ) {
+			$interval = 3600 / $this->settings['orders_per_hour'];
 		}
 
-		if ( $settings['orders_per_hour'] < $progress || '0' === $progress ) {
+		return $interval;
+	}
 
-			if ( $settings['orders_per_hour'] > 60 ) {
-				$batch_size = round( $settings['orders_per_hour'] / 10 );
-				$batches    = 10;
-			} else {
-				$batch_size = round( $settings['orders_per_hour'] / 6 );
-			}
+	/**
+	 * The size of each batch of orders created by the scheduled action.
+	 *
+	 * @return int
+	 */
+	private function get_batch_size(): int {
 
-			for ( $i = 1; $i < $batches; $i ++ ) {
-				$timestamp = time() + ( 360 * $i );
-				as_schedule_single_action( $timestamp, 'hog_generate_orders', array( $batch_size ) );
-			}
-		} else {
-			update_option( 'hog_progress_indicator', 0 );
+		$batch_size = 1;
+
+		if ( $this->settings['orders_per_hour'] > 60 ) {
+			$batch_size = round( $this->settings['orders_per_hour'] / 60 );
 		}
 
+		return $batch_size;
 	}
 
 	/**
@@ -96,28 +129,17 @@ class Cron_Jobs {
 	 *
 	 * @return void
 	 */
-	public function generate_batch( $args ): void {
+	public function create_orders( $args = 1 ): void {
 
-		$progress = get_option( 'hog_progress_indicator', false );
-
-		Logger::log('Generating batch of ' . $args . ' orders' );
-		Logger::log( 'Progress set to ' . $progress );
+		Logger::log( PHP_EOL . 'Generating batch of ' . $args . ' orders' );
 
 		$generator = new \Happy_Order_Generator\Generator();
 
 		for ( $i = 0; $i < $args; $i ++ ) {
-			Logger::log('Generating order ' . $i . ' of ' . $args );
 			$generator->generate_order();
-			$progress ++;
-		}
-
-		if ( ! $progress ) {
-			update_option( 'hog_progress_indicator', 1 );
-		} else {
-			update_option( 'hog_progress_indicator', $progress );
+			sleep( 5 );
 		}
 	}
-
 }
 
 
