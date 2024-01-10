@@ -370,7 +370,7 @@ class Customer {
 		foreach ( $locale_list as $key => $value ) {
 			if ( 'd' === ( $value['type'] ) ) {
 				// we currently use only en locales because special characters are giving us trouble
-				if( str_starts_with( $value['name'],  'en' ) ) {
+				if( ! str_starts_with( $value['name'],  'en' ) ) {
 					continue;
 				}
 				// Extract the country code from the locale
