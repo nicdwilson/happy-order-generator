@@ -5,16 +5,12 @@
 
 namespace Happy_Order_Generator;
 
-use AutomateWoo\Log;
 use Exception;
-use http\Env\Request;
 use WC_Gateway_Stripe;
 use WC_Payment_Token_CC;
 use WC_Stripe_API;
 use WC_Stripe_Exception;
 use WC_Stripe_Helper;
-use WC_Stripe_Payment_Gateway;
-use function Crontrol\Schedule\add;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
@@ -63,7 +59,7 @@ class Gateway_Integration_Stripe {
 	 *
 	 * Ensures only one instance of Gateway is loaded or can be loaded.
 	 *
-	 * @return Gateway_Stripe_Integration instance
+	 * @return Gateway_Integration_Stripe instance
 	 * @since 1.0.0
 	 * @static
 	 */
@@ -85,7 +81,10 @@ class Gateway_Integration_Stripe {
 		/**
 		 * Failed orders going through Stripe are handled by Happy Order Generator, so we intercept them here
 		 */
-		add_action( 'woocommerce_rest_checkout_process_payment_with_context', array( $this, 'do_failure_check' ), 10, 2 );
+		add_action( 'woocommerce_rest_checkout_process_payment_with_context', array(
+			$this,
+			'do_failure_check'
+		), 10, 2 );
 
 		/**
 		 * Handle generated failed orders
@@ -100,14 +99,14 @@ class Gateway_Integration_Stripe {
 	 * - is listed as available
 	 * - is in test mode
 	 *
-	 * @param $supported_gateways
+	 * @param array $supported_gateways
 	 *
-	 * @return mixed
+	 * @return array The supported gateways
 	 */
-	public function add_stripe_support( $supported_gateways ) {
+	public function add_stripe_support( array $supported_gateways ): array {
 
 		/**
-		 * Is Stripe plugin active? Doublecheck because there are clones out there
+		 * Is Stripe plugin active? Double-check because there are clones out there
 		 */
 		if ( ! is_plugin_active( 'woocommerce-gateway-stripe/woocommerce-gateway-stripe.php' ) || ! class_exists( WC_Gateway_Stripe::class ) ) {
 			return $supported_gateways;
@@ -204,7 +203,7 @@ class Gateway_Integration_Stripe {
 		}
 
 		/**
-		 * We always just fail anyway
+		 * We always just fail anyway. That's why we're here.
 		 */
 		$order->update_status( 'failed' );
 	}
@@ -253,7 +252,7 @@ class Gateway_Integration_Stripe {
 
 			$payment_method = $this->get_payment_method( $final_status );
 
-			if ( false !== strpos( $payment_method->id, 'cus_', 0 ) ) {
+			if ( str_contains( $payment_method->id, 'cus_' ) ) {
 				$payment_method_id = $payment_method->default_source;
 				if ( $stripe_customer_id !== $payment_method->id ) {
 					$stripe_customer_id = $payment_method->id;
@@ -265,7 +264,7 @@ class Gateway_Integration_Stripe {
 
 			/**
 			 * If the payment method failed, mark the order as failed
-			 * and bail immediately, otherwise setup a payment intent
+			 * and bail immediately, otherwise set up a payment intent
 			 */
 			if ( isset( $payment_method_id ) && ! empty( $payment_method_id ) ) {
 				$output['stripe_source_id']   = $payment_method_id;
@@ -316,7 +315,7 @@ class Gateway_Integration_Stripe {
 
 			$payment_method = $this->get_payment_method( $final_status );
 
-			if ( false !== strpos( $payment_method->id, 'cus_', 0 ) ) {
+			if ( str_contains( $payment_method->id, 'cus_' ) ) {
 				$payment_method_id = $payment_method->default_source;
 				if ( $stripe_customer_id !== $payment_method->id ) {
 					$stripe_customer_id = $payment_method->id;
@@ -329,7 +328,7 @@ class Gateway_Integration_Stripe {
 
 			/**
 			 * If the payment method failed, mark the order as failed
-			 * and bail immediately, otherwise setup a payment intent
+			 * and bail immediately, otherwise set up a payment intent
 			 */
 			if ( isset( $payment_method_id ) && ! empty( $payment_method_id ) ) {
 				Logger::log( 'Stripe order successfully paid' );
@@ -344,7 +343,7 @@ class Gateway_Integration_Stripe {
 			$order->update_meta_data( '_stripe_source_id', $payment_method_id );
 			$payment_intent = $this->setup_payment_intent( $payment_method_id, $stripe_customer_id, $order );
 
-			if ( isset( $payment_intent ) && ! empty( $payment_intent ) ) {
+			if ( ! empty( $payment_intent ) ) {
 				Logger::log( 'Stripe payment intent ' . $payment_intent->id );
 			} else {
 				Logger::log( 'There was a problem with the Stripe payment intent.' );
@@ -418,21 +417,36 @@ class Gateway_Integration_Stripe {
 	}
 
 
+	/**
+	 * Confirm the payment intent
+	 *
+	 * @param $payment_intent_id
+	 * @param $payment_method_id
+	 *
+	 * //todo tidy this up??
+	 * @return array|false|\stdClass
+	 */
 	public function confirm_payment_intent( $payment_intent_id, $payment_method_id ) {
 
 		$request = array(
 			'payment_method' => $payment_method_id
 		);
 
-		$response = WC_Stripe_API::request( $request, 'payment_intents/' . $payment_intent_id . '/confirm' );
+		try {
+			$response = WC_Stripe_API::request( $request, 'payment_intents/' . $payment_intent_id . '/confirm' );
+		} catch ( Exception $ex ) {
+			Logger::log( 'Confirming the Stripe payment intent failed with ' . $ex->getMessage() );
+			return false;
+		}
 
 		return $response;
 	}
 
 	/**
-	 * Setup the payment intent.
+	 * Set up the payment intent.
 	 *
 	 * @param $payment_method_id
+	 * @param $stripe_customer_id
 	 * @param $order
 	 *
 	 * @return object|bool
@@ -493,12 +507,12 @@ class Gateway_Integration_Stripe {
 	/**
 	 * Submit card details to get back the payment method.
 	 *
-	 * @param $final_status
+	 * @param string $final_status
 	 *
-	 * @return array|
+	 * @return object|bool The payment method object or false if it fails
 	 * @throws WC_Stripe_Exception
 	 */
-	function get_payment_method( $final_status = 'processing' ): object|bool {
+	function get_payment_method( string $final_status = 'processing' ): object|bool {
 
 		if ( $final_status != 'failed' ) {
 			$card_number = '4242424242424242';
@@ -518,7 +532,7 @@ class Gateway_Integration_Stripe {
 
 		$response = WC_Stripe_API::request( $request, 'payment_methods' );
 
-		if ( strpos( $response->id, 'pm_' ) !== false ) {
+		if ( str_contains( $response->id, 'pm_' ) ) {
 			return $response;
 		}
 
@@ -531,7 +545,7 @@ class Gateway_Integration_Stripe {
 			Logger::log( 'Creating the Stripe payment method failed with ' . $ex->getMessage() );
 		}
 
-		if ( isset( $response->id ) && ! empty( $response->id ) ) {
+		if ( ! empty( $response->id ) ) {
 			return $response;
 		} else {
 			return false;
@@ -546,7 +560,7 @@ class Gateway_Integration_Stripe {
 	 *
 	 * @return bool
 	 */
-	public function has_subscription( $order_id ) {
+	public function has_subscription( $order_id ): bool {
 		return ( function_exists( 'wcs_order_contains_subscription' ) && ( wcs_order_contains_subscription( $order_id ) || wcs_is_subscription( $order_id ) || wcs_order_contains_renewal( $order_id ) ) );
 	}
 }

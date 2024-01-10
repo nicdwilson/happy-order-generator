@@ -7,7 +7,6 @@ namespace Happy_Order_Generator;
 
 use Exception;
 use Faker\Factory;
-use http\Message;
 use WP_Error;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -20,9 +19,6 @@ class Customer {
 	 * @var array
 	 */
 	private array $settings;
-
-
-	private string $user_id;
 
 	/**
 	 * Customer The instance of Customer
@@ -168,11 +164,11 @@ class Customer {
 		}
 
 		if ( is_array( $users ) && ! empty( $users[0] ) ) {
-			$this->user_id = $users[0];
+			$user_id = $users[0];
 		} else {
-			$this->user_id = $this->create_user();
+			$user_id = $this->create_user();
 		}
-		return $this->user_id;
+		return $user_id;
 	}
 
 	public function get_id() {
@@ -182,9 +178,9 @@ class Customer {
 	/**
 	 * Get the customer Stripe ID. This is stored as a user option, to be multisite compatible.
 	 *
-	 * @return mixed
+	 * @return string
 	 */
-	public function get_stripe_customer_id() {
+	public function get_stripe_customer_id(): string {
 		return get_user_meta( $this->ID, 'wp__stripe_customer_id', true );
 	}
 
@@ -200,9 +196,9 @@ class Customer {
 	/**
 	 * Create a password
 	 *
-	 * @return mixed|null
+	 * @return string
 	 */
-	private function get_password() {
+	private function get_password(): string {
 		return wp_generate_password();
 	}
 
@@ -226,9 +222,9 @@ class Customer {
 	 * @param $faker
 	 * @param $user_id
 	 *
-	 * @return mixed|string
+	 * @return string
 	 */
-	private function get_customer_lastname( $faker, $user_id ) {
+	private function get_customer_lastname( $faker, $user_id ): string {
 
 		if ( 'faker' === $this->settings['customer_naming_convention'] ) {
 			$last_name = $faker->lastName;
@@ -257,7 +253,7 @@ class Customer {
 				break;
 			default:
 				$email = $faker->email;
-		};
+		}
 
 		return $email;
 	}
@@ -374,7 +370,7 @@ class Customer {
 		foreach ( $locale_list as $key => $value ) {
 			if ( 'd' === ( $value['type'] ) ) {
 				// we currently use only en locales because special characters are giving us trouble
-				if( 'en' !== substr( $value['name'],  0, 2 ) ) {
+				if( str_starts_with( $value['name'],  'en' ) ) {
 					continue;
 				}
 				// Extract the country code from the locale

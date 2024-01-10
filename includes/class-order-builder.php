@@ -104,11 +104,10 @@ class Order_Builder {
 	 * Do checkout, creating the order
 	 *
 	 * @param array $options
-	 *
-	 * options[user_id]
+	 * $options[user_id]
 	 * $options['payment_method']
 	 *
-	 * @return object
+	 * @return object WP_Order or WP_Error
 	 */
 	public function do_checkout( $options ): object {
 
@@ -133,7 +132,7 @@ class Order_Builder {
 			'shipping_address' => array(
 				'first_name' => $user_meta->first_name,
 				'last_name'  => $user_meta->last_name,
-				'company'    => "",
+				'company'    => '',
 				'address_1'  => $user_meta->shipping_address_1,
 				'address_2'  => '',
 				'city'       => $user_meta->shipping_city,
@@ -204,16 +203,10 @@ class Order_Builder {
 
 		$response_object = json_decode( $response_body );
 
+		/**
+		 * Bail if we're broken
+		 */
 		if ( ! $response_object->order_id ) {
-			//todo something went wrong here
-		}
-
-		$order_id = $response_object->order_id;
-
-		$order = wc_get_order( $order_id );
-
-		// Bail if we're broken
-		if ( ! is_a( $order, 'WC_Order' ) ) {
 
 			$message = 'Order creation failed at checkout.\\n';
 
@@ -232,44 +225,25 @@ class Order_Builder {
 				$message .= 'Invalid data was returned.\\n';
 			}
 
-			if ( strpos( $code, '_missing_' ) !== false ) {
+			if ( str_contains( $code, '_missing_' ) ) {
 				$message .= 'Data is missing. We provided:\\n';
 				$message .= json_encode( $body );
 			}
 
 			$order = new WP_Error( $code, $message );
+
+		}else{
+
+			$order_id = $response_object->order_id;
+			$order = wc_get_order( $order_id );
+
+			if( ! is_a( $order, 'WC_Order') ){
+				$order = new WP_Error( 'invalid_orderid', 'Order ID failed to return an order' );
+			}
 		}
 
 		return $order;
 	}
-
-	/**
-	 * Return the order ID of the current order from the store api.
-	 *
-	 * @return false|mixed
-	 */
-	public function get_checkout_order_id() {
-
-		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/checkout';
-		$args = array(
-			'headers' => array(
-				'nonce' => $this->nonce
-			),
-			'cookies' => $this->cookies,
-			'timeout' => 20
-		);
-
-		$response_body = $this->get_post_response( $url, $args );
-
-		$body = json_decode( wp_remote_retrieve_body( $response_body ) );
-
-		if ( is_array( $body ) && isset( $body['order_id'] ) && ! empty( $body['order_id'] ) ) {
-			return $body['order_id'];
-		}
-
-		return false;
-	}
-
 
 	/**
 	 * Add to the current cart using the Store API batch endpoint. Requires an array
@@ -329,7 +303,6 @@ class Order_Builder {
 			Logger::log( $cart_items );
 			Logger::log( 'RESPONSE' );
 			Logger::log( $cart );
-
 			return false;
 		}
 
@@ -346,7 +319,16 @@ class Order_Builder {
 		return $assigned_payment_methods;
 	}
 
-	private function get_post_response( $url, $args ) {
+	/**
+	 * Wrapper for wp_safe_remote_post. Handles errors, returns response body
+	 * as a JSON strong.
+	 *
+	 * @param $url
+	 * @param $args
+	 *
+	 * @return string
+	 */
+	private function get_post_response( $url, $args ): string {
 
 		if ( $this->skip_ssl ) {
 			add_filter( 'https_ssl_verify', '__return_false' );
@@ -370,7 +352,7 @@ class Order_Builder {
 	 *
 	 * @return void
 	 */
-	private function handle_error_response( $response ) {
+	private function handle_error_response( $response ): void {
 		Logger::log( 'Error occurred during order build.' . $response->get_error_message() );
 	}
 

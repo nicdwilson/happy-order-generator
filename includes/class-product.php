@@ -35,7 +35,7 @@ class Product {
 	 *
 	 * @var int
 	 */
-	private int $number_of_products = 1;
+	private int $number_of_products;
 
 	/**
 	 * Product The instance of Product
@@ -92,8 +92,6 @@ class Product {
 	 */
 	public function get_products_for_cart(): array {
 
-		$cart_products = array();
-
 		if ( isset( $this->settings['products'] ) && ! empty( $this->settings['products'] ) ) {
 
 			$product_ids   = $this->settings['products'];
@@ -121,9 +119,11 @@ class Product {
 	 * See add-to-cart endpoint documentation
 	 * https://github.com/woocommerce/woocommerce-blocks/blob/trunk/src/StoreApi/docs/cart.md
 	 *
+	 * @param array $product_ids
+	 *
 	 * @return array
 	 */
-	public function get_cart_products( $product_ids = array() ): array {
+	public function get_cart_products( array $product_ids = array() ): array {
 
 		if ( empty( $product_ids ) ) {
 			$product_ids = $this->get_random_product_ids();
@@ -145,7 +145,9 @@ class Product {
 
 		foreach ( $products as $product ) {
 
-			$type = $product->get_type();
+			$type         = $product->get_type();
+			$variation_id = 0;
+			$variation    = false;
 
 			switch ( $type ) {
 				case 'variation':
@@ -175,7 +177,7 @@ class Product {
 			 * If this is a variation we need to add variation
 			 * data - each attribute name and value is added
 			 */
-			if ( $variation_id > 0 ) {
+			if ( $variation_id > 0 && $variation ) {
 
 				$cart_product['id'] = $variation->get_id();
 
@@ -187,9 +189,9 @@ class Product {
 					 */
 					if ( empty( $attribute_value ) ) {
 						$attribute_terms = wc_get_product_terms( $product->get_id(), $attribute_name );
-						if( !empty( $attribute_terms )){
-							$key = array_rand( $attribute_terms );
-							$attribute_value = $attribute_terms[$key]->name;
+						if ( ! empty( $attribute_terms ) ) {
+							$key             = array_rand( $attribute_terms );
+							$attribute_value = $attribute_terms[ $key ]->name;
 						}
 					}
 
@@ -203,13 +205,13 @@ class Product {
 			$cart_products[] = $cart_product;
 		}
 
-		return apply_filters( 'hog_get_cart_products', $cart_products, $product );
+		return apply_filters( 'hog_get_cart_products', $cart_products, $products );
 	}
 
 	/**
 	 * Returns an array of random product IDs
 	 *
-	 * @return array
+	 * @return array An array of random product IDs.
 	 */
 	public function get_random_product_ids(): array {
 
