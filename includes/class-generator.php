@@ -7,8 +7,6 @@
 
 namespace Happy_Order_Generator;
 
-use Exception;
-use WC_Gateway_Stripe;
 use WC_Stripe_Exception;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,9 +15,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Generator {
 
+	/**
+	 * Available payment methods
+	 *
+	 * @var array|string[]
+	 */
 	private array $available_payment_methods = array( 'bacs' );
-
-	private string $error_message = '';
 
 	/**
 	 * @var bool
@@ -78,13 +79,13 @@ class Generator {
 		/**
 		 * We log as we go but only write out if there is an error
 		 */
-		$this->error_message = 'Starting order generation' . PHP_EOL;
+		$error_message = 'Starting order generation' . PHP_EOL;
 
 		/**
 		 * Sets up the customer to use for checkout
 		 */
 		$customer            = new Customer();
-		$this->error_message .= 'Customer user id ' . $customer->get_id() . PHP_EOL;
+		$error_message .= 'Customer user id ' . $customer->get_id() . PHP_EOL;
 
 		/**
 		 * Selects products to add to the cart
@@ -92,7 +93,7 @@ class Generator {
 		$product             = new Product();
 		$cart_products       = $product->get_products_for_cart();
 		$this->order_contains_subscription = $this->check_cart_for_subscription( $cart_products );
-		$this->error_message .= 'Adding ' . count( $cart_products ) . ' products to the cart'  . PHP_EOL;
+		$error_message .= 'Adding ' . count( $cart_products ) . ' products to the cart'  . PHP_EOL;
 
 		$order_builder = new Order_Builder();
 
@@ -100,7 +101,7 @@ class Generator {
 
 		if( ! $add_to_cart_response ){
 			Logger::log( 'Error adding to cart' );
-			Logger::log( $this->error_message );
+			Logger::log( $error_message );
 			return false;
 		}else{
 			$this->available_payment_methods = $add_to_cart_response;
@@ -140,7 +141,7 @@ class Generator {
 
 		// Bail if we're broken
 		if ( is_wp_error( $order ) ) {
-			Logger::log( $this->error_message );
+			Logger::log( $error_message );
 			Logger::log( 'Order creation failed to checkout.' );
 			Logger::log( $order );
 		}
@@ -187,7 +188,7 @@ class Generator {
 	 *
 	 * @return string
 	 */
-	public function get_payment_method() {
+	public function get_payment_method(): string {
 
 		$hog_payment_methods = apply_filters( 'order_generator_supported_gateways', array( 'bacs' ) );
 
@@ -203,8 +204,6 @@ class Generator {
 		 */
 		$hog_payment_methods = array_intersect( $hog_payment_methods, $this->available_payment_methods );
 
-		return 'stripe';
-
 		return apply_filters('hog_payment_method', array_rand( array_flip( $hog_payment_methods ) ) );
 	}
 
@@ -216,7 +215,7 @@ class Generator {
 	 *
 	 * @return bool True if cart contains a subscription.
 	 */
-	private function check_cart_for_subscription( $cart_items ){
+	private function check_cart_for_subscription( $cart_items ): bool {
 
 		foreach ( $cart_items as $cart_item ) {
 
@@ -233,9 +232,9 @@ class Generator {
 	 * Should the order succeed or not. Batches are not monitored for accuracy - we assign a percentage
 	 * fail/complete/processing to individual orders and let the chips fall where they may.
 	 *
-	 * @return bool
+	 * @return string
 	 */
-	public function get_final_status() {
+	public function get_final_status(): string {
 
 		$status = 'completed';
 
@@ -245,9 +244,7 @@ class Generator {
 		$processing_pct = $completed_pct + $this->settings['order_processing_pct']; // e.g. 90 + 5
 		$failed_pct     = $processing_pct + $this->settings['order_failed_pct']; // e.g. 95 + 5
 
-		if ( $this->settings['order_completed_pct'] > 0 && $rand <= $completed_pct ) {
-			$status = 'completed';
-		} elseif ( $this->settings['order_processing_pct'] > 0 && $rand <= $processing_pct ) {
+		if ( $this->settings['order_processing_pct'] > 0 && $rand <= $processing_pct ) {
 			$status = 'processing';
 		} elseif ( $this->settings['order_failed_pct'] > 0 && $rand <= $failed_pct ) {
 			$status = 'failed';
