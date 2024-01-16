@@ -96,8 +96,11 @@ class Cron_Jobs {
 
 		$interval = 60;
 
-		if ( $this->settings['orders_per_hour'] < 60 ) {
-			$interval = 3600 / $this->settings['orders_per_hour'];
+		if( !empty( $this->settings['orders_per_hour'] ) && $this->settings['orders_per_hour'] > 0 ){
+
+			if ( $this->settings['orders_per_hour'] < 60 ) {
+				$interval = 3600 / $this->settings['orders_per_hour'];
+			}
 		}
 
 		return $interval;
