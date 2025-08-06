@@ -81,6 +81,9 @@ class Product {
 		if ( ! $this->has_bundle_support() ) {
 			// Remove bundle from supported types if not available
 			$this->product_types = array_diff( $this->product_types, array( 'bundle' ) );
+			Logger::log( 'Bundle support not available at initialization, removed from product types' );
+		} else {
+			Logger::log( 'Bundle support available at initialization' );
 		}
 	}
 
@@ -97,13 +100,36 @@ class Product {
 		}
 
 		// Check if bundle functions are available
-		if ( ! function_exists( 'wc_pb_get_bundle' ) && ! class_exists( 'WC_PB' ) ) {
-			Logger::log( 'Bundle support not available: Required functions/classes not found' );
+		if ( ! function_exists( 'WC_PB' ) && ! function_exists( 'wc_pb_get_bundled_item' ) ) {
+			Logger::log( 'Bundle support not available: Required functions not found' );
+			Logger::log( 'Available functions: WC_PB=' . ( function_exists( 'WC_PB' ) ? 'yes' : 'no' ) . ', wc_pb_get_bundled_item=' . ( function_exists( 'wc_pb_get_bundled_item' ) ? 'yes' : 'no' ) );
 			return false;
 		}
 
 		Logger::log( 'Bundle support detected and enabled' );
+		Logger::log( 'Available functions: WC_PB=' . ( function_exists( 'WC_PB' ) ? 'yes' : 'no' ) . ', wc_pb_get_bundled_item=' . ( function_exists( 'wc_pb_get_bundled_item' ) ? 'yes' : 'no' ) );
 		return true;
+	}
+
+	/**
+	 * Public method to check bundle support (can be called later if timing is an issue)
+	 *
+	 * @return bool
+	 */
+	public function check_bundle_support(): bool {
+		return $this->has_bundle_support();
+	}
+
+	/**
+	 * Dynamically add bundle support if it becomes available
+	 *
+	 * @return void
+	 */
+	public function add_bundle_support_if_available(): void {
+		if ( $this->has_bundle_support() && ! in_array( 'bundle', $this->product_types, true ) ) {
+			$this->product_types[] = 'bundle';
+			Logger::log( 'Bundle support added to product types' );
+		}
 	}
 
 	/**
@@ -171,6 +197,9 @@ class Product {
 		if ( empty( $products ) || is_wp_error( $products ) ) {
 			return array();
 		}
+
+		// Check for bundle support before processing products
+		$this->add_bundle_support_if_available();
 
 		foreach ( $products as $product ) {
 
