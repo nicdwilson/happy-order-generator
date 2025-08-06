@@ -203,6 +203,14 @@ class Product {
 
 		foreach ( $products as $product ) {
 
+			Logger::log( '=== Processing product in loop ===' );
+			Logger::log( 'Product ID: ' . $product->get_id() );
+			Logger::log( 'Product Type: ' . $product->get_type() );
+			Logger::log( 'Product Title: ' . $product->get_title() );
+			Logger::log( 'Product Status: ' . $product->get_status() );
+			Logger::log( 'Product Stock Status: ' . $product->get_stock_status() );
+			Logger::log( 'Product Price: ' . $product->get_price() );
+
 			$type         = $product->get_type();
 			$variation_id = 0;
 			$variation    = false;
@@ -220,7 +228,9 @@ class Product {
 					break;
 				case 'bundle':
 					// Handle bundle products - generate configuration
+					Logger::log( '=== Processing bundle product ===' );
 					$bundle_config = $this->generate_bundle_configuration( $product );
+					Logger::log( 'Bundle configuration generated: ' . json_encode( $bundle_config ) );
 					Logger::log( 'Processing bundle product: ' . $product->get_id() . ' - ' . $product->get_title() );
 					break;
 				default:
@@ -269,14 +279,26 @@ class Product {
 			 * If this is a bundle, add the bundle configuration
 			 */
 			if ( $type === 'bundle' && ! empty( $bundle_config ) ) {
+				// For bundles, we'll handle them separately using the Product Bundles plugin's direct method
 				$cart_product['bundle_configuration'] = $bundle_config;
+				$cart_product['is_bundle'] = true;
 				Logger::log( 'Bundle product added to cart: ' . $product->get_id() . ' - ' . $product->get_title() );
 			}
 
 			$cart_products[] = $cart_product;
 		}
 
+		Logger::log( '=== Finished processing all products ===' );
+		Logger::log( 'Total products processed: ' . count( $cart_products ) );
+
 		Logger::log( 'Final cart products: ' . json_encode( $cart_products ) );
+
+		// Check if bundle configurations are included
+		foreach ( $cart_products as $index => $product ) {
+			if ( isset( $product['bundle_configuration'] ) ) {
+				Logger::log( 'Bundle configuration found in cart product ' . $index . ': ' . json_encode( $product['bundle_configuration'] ) );
+			}
+		}
 
 		return apply_filters( 'hog_get_cart_products', $cart_products, $products );
 	}
@@ -341,10 +363,13 @@ class Product {
 
 		Logger::log( 'Generating bundle configuration for bundle ' . $bundle->get_id() . ' with ' . count( $bundled_items ) . ' bundled items' );
 
+		Logger::log( 'Bundle configuration for bundle ' . print_r( $bundled_items, true ) );
+		Logger::log( 'Bundle ' . print_r( $bundle, true ) );
+
 		foreach ( $bundled_items as $bundled_item_id => $bundled_item ) {
 			$item_config = array(
-				'bundled_item_id' => $bundled_item_id,
-				'quantity'        => 1
+				'product_id' => $bundled_item->get_product_id(),
+				'quantity'   => 1
 			);
 
 			Logger::log( 'Processing bundled item ' . $bundled_item_id . ' - Product: ' . $bundled_item->get_product()->get_title() );
@@ -398,10 +423,25 @@ class Product {
 				}
 			}
 
-			$configuration[] = $item_config;
+			$configuration[ $bundled_item_id ] = $item_config;
 		}
 
 		Logger::log( 'Generated bundle configuration: ' . json_encode( $configuration ) );
+
+		// Validate bundle configuration format
+		if ( ! empty( $configuration ) ) {
+			foreach ( $configuration as $bundled_item_id => $item ) {
+				if ( ! isset( $item['product_id'] ) ) {
+					Logger::log( 'ERROR: Bundle configuration missing product_id for item ' . $bundled_item_id );
+					return array();
+				}
+				if ( ! isset( $item['quantity'] ) ) {
+					Logger::log( 'ERROR: Bundle configuration missing quantity for item ' . $bundled_item_id );
+					return array();
+				}
+			}
+			Logger::log( 'Bundle configuration validation passed' );
+		}
 
 		return $configuration;
 	}

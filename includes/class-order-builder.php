@@ -260,63 +260,129 @@ class Order_Builder {
 	public function add_to_cart( array $cart_items = array() ): array|false {
 
 		if ( empty( $cart_items ) ) {
+			Logger::log( 'add_to_cart: No cart items provided' );
 			return false;
 		}
 
-		$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/batch';
+		Logger::log( 'add_to_cart: Starting with ' . count( $cart_items ) . ' items' );
 
-		$body['requests'] = array();
+		// Separate bundle items from regular items
+		$bundle_items = array();
+		$regular_items = array();
 
 		foreach ( $cart_items as $cart_item ) {
-
-			$body['requests'][] = array(
-
-				'path'    => '/wc/store/v1/cart/add-item',
-				'method'  => 'POST',
-				'cache'   => 'no-store',
-				'body'    => $cart_item,
-				'headers' => array(
-					'Nonce' => $this->nonce
-				)
-			);
-		}
-
-		$args = array(
-			'headers' => array(
-				'nonce' => $this->nonce
-			),
-			'timeout' => 20,
-			'body'    => $body
-		);
-
-		$response_body = $this->get_post_response( $url, $args );
-
-		/**
-		 * This is not an error but could still be an unexpected response.
-		 * Check cart contents and bail if we're broken.
-		 */
-		$cart = json_decode( $response_body );
-
-		if ( ! isset( $cart->responses[0]->body->items[0] ) ) {
-			Logger::log( 'Unexpected response from add to cart' );
-			Logger::log( 'REQUEST' );
-			Logger::log( $cart_items );
-			Logger::log( 'RESPONSE' );
-			Logger::log( $cart );
-			return false;
-		}
-
-		/**
-		 * Get the payment method
-		 */
-		$assigned_payment_methods = $cart->responses[0]->body->payment_methods;
-		for ( $i = 0; $i < count( $cart->responses ); $i ++ ) {
-			if ( $cart->responses[ $i ]->body->payment_methods ) {
-				$assigned_payment_methods = array_intersect( $cart->responses[ $i ]->body->payment_methods, $assigned_payment_methods );
+			if ( isset( $cart_item['is_bundle'] ) && $cart_item['is_bundle'] ) {
+				$bundle_items[] = $cart_item;
+			} else {
+				$regular_items[] = $cart_item;
 			}
 		}
 
-		return $assigned_payment_methods;
+		// Handle bundle items using Product Bundles plugin's direct method
+		if ( ! empty( $bundle_items ) ) {
+			Logger::log( 'add_to_cart: Processing ' . count( $bundle_items ) . ' bundle items' );
+			
+			// Check if Product Bundles plugin is available
+			if ( class_exists( 'WC_PB_Cart' ) ) {
+				$pb_cart = WC_PB_Cart::instance();
+				
+				foreach ( $bundle_items as $bundle_item ) {
+					$product_id = $bundle_item['id'];
+					$quantity = $bundle_item['quantity'];
+					$configuration = $bundle_item['bundle_configuration'];
+					
+					Logger::log( 'add_to_cart: Adding bundle to cart - Product ID: ' . $product_id . ', Quantity: ' . $quantity );
+					Logger::log( 'add_to_cart: Bundle configuration: ' . json_encode( $configuration ) );
+					
+					$result = $pb_cart->add_bundle_to_cart( $product_id, $quantity, $configuration );
+					
+					if ( is_wp_error( $result ) ) {
+						Logger::log( 'add_to_cart: Error adding bundle to cart: ' . $result->get_error_message() );
+						return false;
+					} else {
+						Logger::log( 'add_to_cart: Bundle added to cart successfully' );
+					}
+				}
+			} else {
+				Logger::log( 'add_to_cart: Product Bundles plugin not available for bundle items' );
+				return false;
+			}
+		}
+
+		// Handle regular items using Store API
+		if ( ! empty( $regular_items ) ) {
+			Logger::log( 'add_to_cart: Processing ' . count( $regular_items ) . ' regular items via Store API' );
+			
+			$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/batch';
+
+			$body['requests'] = array();
+
+			foreach ( $regular_items as $cart_item ) {
+				Logger::log( 'add_to_cart: Processing regular item - ' . json_encode( $cart_item ) );
+
+				$body['requests'][] = array(
+					'path'    => '/wc/store/v1/cart/add-item',
+					'method'  => 'POST',
+					'cache'   => 'no-store',
+					'body'    => $cart_item,
+					'headers' => array(
+						'Nonce' => $this->nonce
+					)
+				);
+			}
+
+			$args = array(
+				'headers' => array(
+					'nonce' => $this->nonce
+				),
+				'timeout' => 20,
+				'body'    => $body
+			);
+
+			Logger::log( 'add_to_cart: Sending request to Store API' );
+			$response_body = $this->get_post_response( $url, $args );
+
+			Logger::log( 'add_to_cart: Response received - ' . substr( $response_body, 0, 200 ) . '...' );
+
+			/**
+			 * This is not an error but could still be an unexpected response.
+			 * Check cart contents and bail if we're broken.
+			 */
+			$cart = json_decode( $response_body );
+
+			if ( ! isset( $cart->responses[0]->body->items[0] ) ) {
+				Logger::log( 'Unexpected response from add to cart' );
+				Logger::log( 'REQUEST' );
+				Logger::log( $regular_items );
+				Logger::log( 'RESPONSE' );
+				Logger::log( $cart );
+				return false;
+			}
+
+			Logger::log( 'add_to_cart: Successfully added regular items to cart' );
+
+			/**
+			 * Get the payment method
+			 */
+			$assigned_payment_methods = $cart->responses[0]->body->payment_methods;
+			for ( $i = 0; $i < count( $cart->responses ); $i ++ ) {
+				if ( $cart->responses[ $i ]->body->payment_methods ) {
+					$assigned_payment_methods = array_intersect( $cart->responses[ $i ]->body->payment_methods, $assigned_payment_methods );
+				}
+			}
+
+			Logger::log( 'add_to_cart: Available payment methods - ' . json_encode( $assigned_payment_methods ) );
+
+			return $assigned_payment_methods;
+		}
+
+		// If we only had bundle items, return default payment methods
+		if ( ! empty( $bundle_items ) && empty( $regular_items ) ) {
+			Logger::log( 'add_to_cart: Only bundle items processed, returning default payment methods' );
+			return array( 'bacs' );
+		}
+
+		return false;
 	}
 
 	/**
@@ -330,6 +396,8 @@ class Order_Builder {
 	 */
 	private function get_post_response( $url, $args ): string {
 
+		Logger::log( 'get_post_response: Making request to ' . $url );
+
 		if ( $this->skip_ssl ) {
 			add_filter( 'https_ssl_verify', '__return_false' );
 		}
@@ -337,12 +405,17 @@ class Order_Builder {
 		remove_filter( 'https_ssl_verify', '__return_false' );
 
 		if ( is_wp_error( $response ) ) {
+			Logger::log( 'get_post_response: WP Error occurred' );
 			$this->handle_error_response( $response );
 		} else {
+			Logger::log( 'get_post_response: Request successful, status: ' . wp_remote_retrieve_response_code( $response ) );
 			$this->cookies = $response['cookies'];
 		}
 
-		return wp_remote_retrieve_body( $response );
+		$body = wp_remote_retrieve_body( $response );
+		Logger::log( 'get_post_response: Response body length: ' . strlen( $body ) );
+
+		return $body;
 	}
 
 	/**
@@ -353,7 +426,8 @@ class Order_Builder {
 	 * @return void
 	 */
 	private function handle_error_response( $response ): void {
-		Logger::log( 'Error occurred during order build.' . $response->get_error_message() );
+		Logger::log( 'Error occurred during order build: ' . $response->get_error_message() );
+		Logger::log( 'Error code: ' . $response->get_error_code() );
 	}
 
 }
