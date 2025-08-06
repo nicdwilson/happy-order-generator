@@ -238,7 +238,7 @@ class Order_Builder {
 			$order = wc_get_order( $order_id );
 
 			if( ! is_a( $order, 'WC_Order') ){
-				$order = new WP_Error( 'invalid_orderid', 'Order ID failed to return an order' );
+				$order = new WP_Error( 'invalid_order_id', 'Order ID failed to return an order' );
 			}
 		}
 
