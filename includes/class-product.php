@@ -26,7 +26,8 @@ class Product {
 		'variable',
 		'subscription',
 		'variable_subscription',
-		'variation'
+		'variation',
+		'bundle'
 	);
 
 
@@ -75,6 +76,34 @@ class Product {
 
 		$this->settings           = Order_Generator::get_settings();
 		$this->number_of_products = $this->get_number_of_products();
+		
+		// Check if bundle support is available
+		if ( ! $this->has_bundle_support() ) {
+			// Remove bundle from supported types if not available
+			$this->product_types = array_diff( $this->product_types, array( 'bundle' ) );
+		}
+	}
+
+	/**
+	 * Check if WooCommerce Product Bundles plugin is active and available
+	 *
+	 * @return bool
+	 */
+	private function has_bundle_support(): bool {
+		// Check if the Product Bundles plugin is active
+		if ( ! class_exists( 'WC_Product_Bundle' ) ) {
+			Logger::log( 'Bundle support not available: WC_Product_Bundle class not found' );
+			return false;
+		}
+
+		// Check if bundle functions are available
+		if ( ! function_exists( 'wc_pb_get_bundle' ) && ! class_exists( 'WC_PB' ) ) {
+			Logger::log( 'Bundle support not available: Required functions/classes not found' );
+			return false;
+		}
+
+		Logger::log( 'Bundle support detected and enabled' );
+		return true;
 	}
 
 	/**
@@ -160,6 +189,11 @@ class Product {
 					$variation_id = (int) $variations[ $index ];
 					$variation    = wc_get_product( $variation_id );
 					break;
+				case 'bundle':
+					// Handle bundle products - generate configuration
+					$bundle_config = $this->generate_bundle_configuration( $product );
+					Logger::log( 'Processing bundle product: ' . $product->get_id() . ' - ' . $product->get_title() );
+					break;
 				default:
 					break;
 			}
@@ -200,6 +234,13 @@ class Product {
 						'value'     => $attribute_value
 					);
 				}
+			}
+
+			/**
+			 * If this is a bundle, add the bundle configuration
+			 */
+			if ( $type === 'bundle' && ! empty( $bundle_config ) ) {
+				$cart_product['bundle_configuration'] = $bundle_config;
 			}
 
 			$cart_products[] = $cart_product;
@@ -243,6 +284,85 @@ class Product {
 		}
 
 		return $number_of_products;
+	}
+
+	/**
+	 * Generates a valid bundle configuration for a bundle product
+	 *
+	 * @param WC_Product_Bundle $bundle The bundle product
+	 * @return array Bundle configuration array
+	 */
+	private function generate_bundle_configuration( $bundle ): array {
+		$configuration = array();
+
+		if ( ! $bundle || ! $bundle->is_type( 'bundle' ) ) {
+			Logger::log( 'Bundle configuration generation failed: Invalid bundle product' );
+			return $configuration;
+		}
+
+		$bundled_items = $bundle->get_bundled_items();
+
+		if ( empty( $bundled_items ) ) {
+			Logger::log( 'Bundle configuration generation failed: No bundled items found for bundle ' . $bundle->get_id() );
+			return $configuration;
+		}
+
+		Logger::log( 'Generating bundle configuration for bundle ' . $bundle->get_id() . ' with ' . count( $bundled_items ) . ' bundled items' );
+
+		foreach ( $bundled_items as $bundled_item_id => $bundled_item ) {
+			$item_config = array(
+				'bundled_item_id' => $bundled_item_id,
+				'quantity'        => 1
+			);
+
+			// Handle optional items - randomly include them
+			if ( $bundled_item->is_optional() ) {
+				$item_config['optional_selected'] = rand( 0, 1 ) ? 'yes' : 'no';
+			} else {
+				$item_config['optional_selected'] = 'yes';
+			}
+
+			// Set quantity for the bundled item
+			$quantity_min = $bundled_item->get_quantity( 'min' );
+			$quantity_max = $bundled_item->get_quantity( 'max' );
+			
+			if ( $quantity_max > $quantity_min ) {
+				$item_config['quantity'] = rand( $quantity_min, $quantity_max );
+			} else {
+				$item_config['quantity'] = $quantity_min;
+			}
+
+			// Handle variable products within bundles
+			if ( $bundled_item->is_variable() ) {
+				$variations = $bundled_item->get_product_variations();
+				if ( ! empty( $variations ) ) {
+					$random_variation = array_rand( $variations );
+					$variation_id = $variations[ $random_variation ];
+					$item_config['variation_id'] = $variation_id;
+
+					// Get variation attributes
+					$variation = wc_get_product( $variation_id );
+					if ( $variation ) {
+						$attributes = $variation->get_attributes();
+						if ( ! empty( $attributes ) ) {
+							$item_config['attributes'] = array();
+							foreach ( $attributes as $attribute_name => $attribute_value ) {
+								$item_config['attributes'][] = array(
+									'name'   => $attribute_name,
+									'option' => $attribute_value
+								);
+							}
+						}
+					}
+				}
+			}
+
+			$configuration[] = $item_config;
+		}
+
+		Logger::log( 'Generated bundle configuration: ' . json_encode( $configuration ) );
+
+		return $configuration;
 	}
 }
 
