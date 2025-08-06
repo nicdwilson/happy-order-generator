@@ -270,10 +270,13 @@ class Product {
 			 */
 			if ( $type === 'bundle' && ! empty( $bundle_config ) ) {
 				$cart_product['bundle_configuration'] = $bundle_config;
+				Logger::log( 'Bundle product added to cart: ' . $product->get_id() . ' - ' . $product->get_title() );
 			}
 
 			$cart_products[] = $cart_product;
 		}
+
+		Logger::log( 'Final cart products: ' . json_encode( $cart_products ) );
 
 		return apply_filters( 'hog_get_cart_products', $cart_products, $products );
 	}
@@ -344,11 +347,15 @@ class Product {
 				'quantity'        => 1
 			);
 
+			Logger::log( 'Processing bundled item ' . $bundled_item_id . ' - Product: ' . $bundled_item->get_product()->get_title() );
+
 			// Handle optional items - randomly include them
 			if ( $bundled_item->is_optional() ) {
 				$item_config['optional_selected'] = rand( 0, 1 ) ? 'yes' : 'no';
+				Logger::log( 'Optional item ' . $bundled_item_id . ' selected: ' . $item_config['optional_selected'] );
 			} else {
 				$item_config['optional_selected'] = 'yes';
+				Logger::log( 'Required item ' . $bundled_item_id . ' included' );
 			}
 
 			// Set quantity for the bundled item
@@ -361,6 +368,8 @@ class Product {
 				$item_config['quantity'] = $quantity_min;
 			}
 
+			Logger::log( 'Item ' . $bundled_item_id . ' quantity set to: ' . $item_config['quantity'] );
+
 			// Handle variable products within bundles
 			if ( $bundled_item->is_variable() ) {
 				$variations = $bundled_item->get_product_variations();
@@ -368,6 +377,8 @@ class Product {
 					$random_variation = array_rand( $variations );
 					$variation_id = $variations[ $random_variation ];
 					$item_config['variation_id'] = $variation_id;
+
+					Logger::log( 'Variable item ' . $bundled_item_id . ' - selected variation: ' . $variation_id );
 
 					// Get variation attributes
 					$variation = wc_get_product( $variation_id );
@@ -381,6 +392,7 @@ class Product {
 									'option' => $attribute_value
 								);
 							}
+							Logger::log( 'Variation attributes added for item ' . $bundled_item_id );
 						}
 					}
 				}
