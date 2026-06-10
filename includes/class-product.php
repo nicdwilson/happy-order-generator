@@ -81,9 +81,6 @@ class Product {
 		if ( ! $this->has_bundle_support() ) {
 			// Remove bundle from supported types if not available
 			$this->product_types = array_diff( $this->product_types, array( 'bundle' ) );
-			Logger::log( 'Bundle support not available at initialization, removed from product types' );
-		} else {
-			Logger::log( 'Bundle support available at initialization' );
 		}
 	}
 
@@ -95,19 +92,14 @@ class Product {
 	private function has_bundle_support(): bool {
 		// Check if the Product Bundles plugin is active
 		if ( ! class_exists( 'WC_Product_Bundle' ) ) {
-			Logger::log( 'Bundle support not available: WC_Product_Bundle class not found' );
 			return false;
 		}
 
 		// Check if bundle functions are available
 		if ( ! function_exists( 'WC_PB' ) && ! function_exists( 'wc_pb_get_bundled_item' ) ) {
-			Logger::log( 'Bundle support not available: Required functions not found' );
-			Logger::log( 'Available functions: WC_PB=' . ( function_exists( 'WC_PB' ) ? 'yes' : 'no' ) . ', wc_pb_get_bundled_item=' . ( function_exists( 'wc_pb_get_bundled_item' ) ? 'yes' : 'no' ) );
 			return false;
 		}
 
-		Logger::log( 'Bundle support detected and enabled' );
-		Logger::log( 'Available functions: WC_PB=' . ( function_exists( 'WC_PB' ) ? 'yes' : 'no' ) . ', wc_pb_get_bundled_item=' . ( function_exists( 'wc_pb_get_bundled_item' ) ? 'yes' : 'no' ) );
 		return true;
 	}
 
@@ -128,7 +120,6 @@ class Product {
 	public function add_bundle_support_if_available(): void {
 		if ( $this->has_bundle_support() && ! in_array( 'bundle', $this->product_types, true ) ) {
 			$this->product_types[] = 'bundle';
-			Logger::log( 'Bundle support added to product types' );
 		}
 	}
 
@@ -203,13 +194,7 @@ class Product {
 
 		foreach ( $products as $product ) {
 
-			Logger::log( '=== Processing product in loop ===' );
-			Logger::log( 'Product ID: ' . $product->get_id() );
-			Logger::log( 'Product Type: ' . $product->get_type() );
-			Logger::log( 'Product Title: ' . $product->get_title() );
-			Logger::log( 'Product Status: ' . $product->get_status() );
-			Logger::log( 'Product Stock Status: ' . $product->get_stock_status() );
-			Logger::log( 'Product Price: ' . $product->get_price() );
+			Logger::log( 'Processing product: ' . $product->get_id() . ' (' . $product->get_type() . ') - ' . $product->get_title() );
 
 			$type         = $product->get_type();
 			$variation_id = 0;
@@ -228,10 +213,7 @@ class Product {
 					break;
 				case 'bundle':
 					// Handle bundle products - generate configuration
-					Logger::log( '=== Processing bundle product ===' );
 					$bundle_config = $this->generate_bundle_configuration( $product );
-					Logger::log( 'Bundle configuration generated: ' . json_encode( $bundle_config ) );
-					Logger::log( 'Processing bundle product: ' . $product->get_id() . ' - ' . $product->get_title() );
 					break;
 				default:
 					break;
@@ -243,7 +225,6 @@ class Product {
 			$cart_product = array(
 				'id'        => $product->get_id(),
 				'quantity'  => 1,
-				'variation' => array()
 			);
 
 			/**
@@ -279,26 +260,14 @@ class Product {
 			 * If this is a bundle, add the bundle configuration
 			 */
 			if ( $type === 'bundle' && ! empty( $bundle_config ) ) {
-				// For bundles, we'll handle them separately using the Product Bundles plugin's direct method
 				$cart_product['bundle_configuration'] = $bundle_config;
-				$cart_product['is_bundle'] = true;
-				Logger::log( 'Bundle product added to cart: ' . $product->get_id() . ' - ' . $product->get_title() );
 			}
 
 			$cart_products[] = $cart_product;
+
 		}
 
-		Logger::log( '=== Finished processing all products ===' );
 		Logger::log( 'Total products processed: ' . count( $cart_products ) );
-
-		Logger::log( 'Final cart products: ' . json_encode( $cart_products ) );
-
-		// Check if bundle configurations are included
-		foreach ( $cart_products as $index => $product ) {
-			if ( isset( $product['bundle_configuration'] ) ) {
-				Logger::log( 'Bundle configuration found in cart product ' . $index . ': ' . json_encode( $product['bundle_configuration'] ) );
-			}
-		}
 
 		return apply_filters( 'hog_get_cart_products', $cart_products, $products );
 	}
@@ -350,41 +319,35 @@ class Product {
 		$configuration = array();
 
 		if ( ! $bundle || ! $bundle->is_type( 'bundle' ) ) {
-			Logger::log( 'Bundle configuration generation failed: Invalid bundle product' );
 			return $configuration;
 		}
 
 		$bundled_items = $bundle->get_bundled_items();
-
+		
 		if ( empty( $bundled_items ) ) {
-			Logger::log( 'Bundle configuration generation failed: No bundled items found for bundle ' . $bundle->get_id() );
 			return $configuration;
 		}
 
-		Logger::log( 'Generating bundle configuration for bundle ' . $bundle->get_id() . ' with ' . count( $bundled_items ) . ' bundled items' );
-
-		Logger::log( 'Bundle configuration for bundle ' . print_r( $bundled_items, true ) );
-		Logger::log( 'Bundle ' . print_r( $bundle, true ) );
-
 		foreach ( $bundled_items as $bundled_item_id => $bundled_item ) {
-			$item_config = array(
-				'product_id' => $bundled_item->get_product_id(),
-				'quantity'   => 1
-			);
 
-			Logger::log( 'Processing bundled item ' . $bundled_item_id . ' - Product: ' . $bundled_item->get_product()->get_title() );
+			$include_item = $include_item = rand( 0, 1 );
+			
+			if (  $bundled_item->is_optional() && $include_item === 0 ) {
+				continue;
+			}
+
+
+			
+			$item_config = array();
+			$item_config['bundled_item_id'] = $bundled_item->get_product_id();
 
 			// Handle optional items - randomly include them
-			if ( $bundled_item->is_optional() ) {
-				$item_config['optional_selected'] = rand( 0, 1 ) ? 'yes' : 'no';
-				Logger::log( 'Optional item ' . $bundled_item_id . ' selected: ' . $item_config['optional_selected'] );
-			} else {
+			if ( $bundled_item->is_optional() && $include_item === 1 ) {
 				$item_config['optional_selected'] = 'yes';
-				Logger::log( 'Required item ' . $bundled_item_id . ' included' );
 			}
 
 			// Set quantity for the bundled item
-			$quantity_min = $bundled_item->get_quantity( 'min' );
+			$quantity_min = ( $bundled_item->get_quantity( 'min' ) < 1 ) ? 1 : $bundled_item->get_quantity( 'min' );
 			$quantity_max = $bundled_item->get_quantity( 'max' );
 			
 			if ( $quantity_max > $quantity_min ) {
@@ -392,9 +355,7 @@ class Product {
 			} else {
 				$item_config['quantity'] = $quantity_min;
 			}
-
-			Logger::log( 'Item ' . $bundled_item_id . ' quantity set to: ' . $item_config['quantity'] );
-
+			/**
 			// Handle variable products within bundles
 			if ( $bundled_item->is_variable() ) {
 				$variations = $bundled_item->get_product_variations();
@@ -422,26 +383,13 @@ class Product {
 					}
 				}
 			}
+			*/
+				
 
-			$configuration[ $bundled_item_id ] = $item_config;
+			$configuration[] = $item_config;
 		}
 
-		Logger::log( 'Generated bundle configuration: ' . json_encode( $configuration ) );
 
-		// Validate bundle configuration format
-		if ( ! empty( $configuration ) ) {
-			foreach ( $configuration as $bundled_item_id => $item ) {
-				if ( ! isset( $item['product_id'] ) ) {
-					Logger::log( 'ERROR: Bundle configuration missing product_id for item ' . $bundled_item_id );
-					return array();
-				}
-				if ( ! isset( $item['quantity'] ) ) {
-					Logger::log( 'ERROR: Bundle configuration missing quantity for item ' . $bundled_item_id );
-					return array();
-				}
-			}
-			Logger::log( 'Bundle configuration validation passed' );
-		}
 
 		return $configuration;
 	}

@@ -93,6 +93,7 @@ class Generator {
 		 */
 		$product             = new Product();
 		$cart_products       = $product->get_products_for_cart();
+		
 		$this->order_contains_subscription = $this->check_cart_for_subscription( $cart_products );
 		$error_message .= 'Adding ' . count( $cart_products ) . ' products to the cart'  . PHP_EOL;
 		Logger::log( 'Cart products prepared: ' . count( $cart_products ) . ' products' );
@@ -101,12 +102,14 @@ class Generator {
 
 		$add_to_cart_response = $order_builder->add_to_cart( $cart_products );
 
+		Logger::log( 'Add to cart response: ' . print_r( $add_to_cart_response, true ) );
+
 		if( ! $add_to_cart_response ){
 			Logger::log( 'Error adding to cart' );
 			Logger::log( $error_message );
 			return false;
 		}else{
-			$this->available_payment_methods = $add_to_cart_response;
+			$this->available_payment_methods = $add_to_cart_response['payment_methods'];
 			Logger::log( 'Products added to cart successfully' );
 		}
 
@@ -138,6 +141,8 @@ class Generator {
 		}
 
 		$options['payment_data']['final_status'] = $status;
+
+		Logger::log( 'Payment data prepared: ' . print_r( $options, true ) );
 
 		/**
 		 * Checkout, with additional options, get back the order and

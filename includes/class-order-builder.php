@@ -10,39 +10,62 @@ use WP_Error;
 class Order_Builder {
 
 	/**
+	 * @var HTTP_Client
+	 */
+	private HTTP_Client $http_client;
+
+	/**
+	 * @var Cart_Handler
+	 */
+	private Cart_Handler $cart_handler;
+
+	/**
+	 * @var string
+	 */
+	private string $nonce;
+
+	/**
 	 * @var bool
 	 */
 	private bool $skip_ssl = false;
 
 	/**
-	 * @var string
-	 */
-	public string $nonce;
-
-	/**
 	 * @var array
 	 */
-	private array $cookies;
+	private array $cookies = [];
 
 	public function __construct() {
-
 		$settings = Order_Generator::get_settings();
 		if ( $settings['skip_ssl'] === 1 ) {
 			$this->skip_ssl = true;
 		}
 
+		// Initialize HTTP client
+		$this->http_client = new HTTP_Client(
+			get_bloginfo( 'url' ) . '/wp-json/wc/store/v1',
+			$this->skip_ssl
+		);
+
+		// Get and validate nonce
 		$this->nonce = $this->get_nonce();
-
-
 		if ( $this->nonce === false ) {
+			Logger::warning( 'Failed to get nonce on first attempt, retrying...' );
 			sleep( 3 );
 			$this->nonce = $this->get_nonce();
 		}
 
-		if ( ! $this->get_nonce() ) {
-			Logger::log( 'Unable to fetch nonce when initialising the order builder.' );
+		if ( ! $this->nonce ) {
+			Logger::error( 'Unable to fetch nonce when initialising the order builder.' );
+			throw new \Exception( 'Failed to obtain nonce for Store API' );
 		}
 
+		// Authenticate HTTP client with nonce
+		$this->http_client->authenticate( $this->nonce );
+
+		// Initialize cart handler with HTTP client
+		$this->cart_handler = new Cart_Handler( $this->http_client );
+
+		Logger::info( 'Order_Builder initialized successfully with nonce' );
 	}
 
 	/**
@@ -50,8 +73,7 @@ class Order_Builder {
 	 *
 	 * @return false|string
 	 */
-	public function get_nonce(): bool|string {
-
+	private function get_nonce(): bool|string {
 		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/cart';
 		$args = array(
 			'timeout' => 20
@@ -63,41 +85,79 @@ class Order_Builder {
 		$response = wp_safe_remote_get( $url, $args );
 		remove_filter( 'https_ssl_verify', '__return_false' );
 
-		$headers = wp_remote_retrieve_headers( $response );
-
 		if ( is_wp_error( $response ) ) {
-			$this->handle_error_response( $response );
+			Logger::log_exception( 'Error fetching nonce', $response );
+			return false;
 		}
 
-		return ( isset( $headers['nonce'] ) ) ? $headers['nonce'] : false;
+		$headers = wp_remote_retrieve_headers( $response );
+		$nonce = isset( $headers['nonce'] ) ? $headers['nonce'] : false;
+
+		if ( $nonce ) {
+			Logger::info( 'Nonce obtained successfully' );
+		} else {
+			Logger::warning( 'No nonce found in response headers' );
+		}
+
+		return $nonce;
 	}
 
 	/**
-	 * Returns the status of the cart
+	 * Get the current cart state including payment methods
 	 *
-	 * @return string
+	 * @return array|false Cart state with payment methods or false on error
 	 */
-	public function get_cart(): string {
-
-		$url  = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/cart';
-		$args = array(
-			'headers' => array(
-				'nonce' => $this->nonce
-			),
-			'timeout' => 20
-		);
-
-		if ( $this->skip_ssl ) {
-			add_filter( 'https_ssl_verify', '__return_false' );
+	public function get_cart_state(): array|false {
+		try {
+			return $this->cart_handler->get_cart_state();
+		} catch ( \Exception $e ) {
+			Logger::log_exception( 'Error retrieving cart state', $e );
+			return false;
 		}
-		$response = wp_safe_remote_get( $url, $args );
-		remove_filter( 'https_ssl_verify', '__return_false' );
+	}
 
-		if ( is_wp_error( $response ) ) {
-			$this->handle_error_response( $response );
+	/**
+	 * Add items to the current cart using the Cart Handler.
+	 * Handles both bundle and regular products with appropriate request methods.
+	 *
+	 * @param array $cart_items Array of cart items to add
+	 * @return array|false Cart state with payment methods or false on error
+	 */
+	public function add_to_cart( array $cart_items = array() ): array|false {
+		if ( empty( $cart_items ) ) {
+			Logger::warning( 'No cart items provided' );
+			return false;
 		}
 
-		return json_decode( wp_remote_retrieve_body( $response ) );
+		Logger::info( 'Processing cart items via Cart Handler', [
+			'item_count' => count( $cart_items )
+		] );
+		
+		try {
+			$cart_state = $this->cart_handler->add_to_cart( $cart_items );
+			
+			if ( $cart_state === false ) {
+				Logger::warning( 'Cart handler returned false' );
+				return false;
+			}
+
+			Logger::info( 'Cart state retrieved', [
+			'cart_state_keys' => is_array( $cart_state ) ? array_keys( $cart_state ) : ['not_array']
+		] );
+			
+			return $cart_state;
+			
+		} catch ( \Exception $e ) {
+			Logger::log_exception( 'Error adding items to cart', $e, [
+				'cart_items' => $cart_items
+			] );
+			return false;
+		} catch ( \Error $e ) {
+			Logger::log_exception( 'Fatal error adding items to cart', $e, [
+				'cart_items' => $cart_items
+			] );
+			return false;
+		}
 	}
 
 	/**
@@ -110,38 +170,56 @@ class Order_Builder {
 	 * @return object WP_Order or WP_Error
 	 */
 	public function do_checkout( $options ): object {
+		$user = get_userdata( $options['user_id'] );
 
-		$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/checkout';
+		if( ! $user ){
+			Logger::error( 'User not found for checkout', [
+			'user_id' => $options['user_id']
+		] );
+			return new WP_Error( 'user_not_found', 'User not found' );
+		}
 
-		$user_meta = get_userdata( $options['user_id'] );
+		$first_name = $user->get('first_name');
+		$last_name = $user->get('last_name');
+		$billing_address_1 = $user->get('billing_address_1');
+		$billing_city = $user->get('billing_city');
+		$billing_state = $user->get('billing_state');
+		$billing_postcode = $user->get('billing_postcode');
+		$billing_country = $user->get('billing_country');
+		$billing_email = $user->get('billing_email');
+		$billing_phone = $user->get('billing_phone');
+		$shipping_address_1 = $user->get('shipping_address_1');
+		$shipping_city = $user->get('shipping_city');
+		$shipping_state = $user->get('shipping_state');
+		$shipping_postcode = $user->get('shipping_postcode');
+		$shipping_country = $user->get('shipping_country');
 
 		$body = array(
 			'billing_address'  => array(
-				'first_name' => $user_meta->first_name,
-				'last_name'  => $user_meta->last_name,
+				'first_name' => $first_name,
+				'last_name'  => $last_name,
 				'company'    => '',
-				'address_1'  => $user_meta->billing_address_1,
+				'address_1'  => $billing_address_1,
 				'address_2'  => '',
-				"city"       => $user_meta->billing_city,
-				"state"      => $user_meta->billing_state,
-				"postcode"   => $user_meta->billing_postcode,
-				"country"    => $user_meta->billing_country,
-				"email"      => $user_meta->billing_email,
-				"phone"      => $user_meta->billing_phone
+				"city"       => $billing_city,
+				"state"      => $billing_state,
+				"postcode"   => $billing_postcode,
+				"country"    => $billing_country,
+				"email"      => $billing_email,
+				"phone"      => $billing_phone
 			),
 			'shipping_address' => array(
-				'first_name' => $user_meta->first_name,
-				'last_name'  => $user_meta->last_name,
+				'first_name' => $first_name,
+				'last_name'  => $last_name,
 				'company'    => '',
-				'address_1'  => $user_meta->shipping_address_1,
+				'address_1'  => $shipping_address_1,
 				'address_2'  => '',
-				'city'       => $user_meta->shipping_city,
-				'state'      => $user_meta->shipping_state,
-				'postcode'   => $user_meta->shipping_postcode,
-				'country'    => $user_meta->shipping_country,
+				'city'       => $shipping_city,
+				'state'      => $shipping_state,
+				'postcode'   => $shipping_postcode,
+				'country'    => $shipping_country,
 			),
 			'customer_note'    => '',
-			'create_account'   => true,
 			'payment_method'   => $options['payment_method'],
 		);
 
@@ -161,15 +239,15 @@ class Order_Builder {
 				),
 				array(
 					'key'   => 'billing_email',
-					'value' => $user_meta->billing_email,
+					'value' => $user->get('billing_email'),
 				),
 				array(
 					'key'   => 'billing_first_name',
-					"value" => $user_meta->first_name,
+					"value" => $user->get('first_name'),
 				),
 				array(
 					"key"   => "billing_last_name",
-					"value" => $user_meta->last_name
+					"value" => $user->get('last_name'),
 				),
 				array(
 					"key"   => "paymentMethod",
@@ -190,244 +268,113 @@ class Order_Builder {
 			);
 		}
 
-		$args = array(
-			'headers' => array(
-				'nonce' => $this->nonce
-			),
-			'cookies' => $this->cookies,
-			'body'    => $body,
-			'timeout' => 20
-		);
+		try {
+			Logger::info( 'Creating order via checkout endpoint' );
+			
+			$response_data = $this->http_client->post( '/checkout', $body );
 
-		$response_body = $this->get_post_response( $url, $args );
+			Logger::log( 'Checkout response: ' . print_r( $response_data, true ) );
+			
+			Logger::info( 'Checkout response received', [
+				'has_order_id' => isset( $response_data['order_id'] ),
+				'response_keys' => array_keys( $response_data )
+			] );
 
-		$response_object = json_decode( $response_body );
+			/**
+			 * Bail if we're broken
+			 */
+			if ( ! isset( $response_data['order_id'] ) ) {
+				$message = 'Order creation failed at checkout.\n';
 
-		/**
-		 * Bail if we're broken
-		 */
-		if ( ! $response_object->order_id ) {
+				if ( isset( $response_data['code'] ) ) {
+					$code = $response_data['code'];
+				} else {
+					$code = 'Unknown error';
+					$message .= 'Response: ' . print_r( $response_data, true );
+				}
 
-			$message = 'Order creation failed at checkout.\\n';
+				if ( isset( $response_data['message'] ) ) {
+					$message .= 'An error occurred: ' . sanitize_text_field( $response_data['message'] );
+				}
+				
+				if ( 'rest_invalid_param' === $code ) {
+					$message .= 'Invalid data was returned.\n';
+				}
 
-			if ( $response_object->code ) {
-				$code = $response_object->code;
+				if ( str_contains( $code, '_missing_' ) ) {
+					$message .= 'Data is missing. We provided:\n';
+					$message .= json_encode( $body );
+				}
+
+				Logger::error( 'Order creation failed', [
+					'error_code' => $code,
+					'error_message' => $message
+				] );
+
+				$order = new WP_Error( $code, $message );
+
 			} else {
-				$code = 'Unknown error';
-				//todo fix?
-				$message .= sanitize_text_field( $response_body );
+				$order_id = $response_data['order_id'];
+				$order = wc_get_order( $order_id );
+
+				if( ! is_a( $order, 'WC_Order') ){
+					Logger::error( 'Order ID failed to return a valid order', [
+						'order_id' => $order_id
+					] );
+					$order = new WP_Error( 'invalid_order_id', 'Order ID failed to return an order' );
+				} else {
+					Logger::info( 'Order created successfully', [
+						'order_id' => $order_id
+					] );
+				}
 			}
 
-			if ( $response_object->code ) {
-				$message .= 'An error occurred: ' . sanitize_text_field( $response_object->message );
-			}
-			if ( 'rest_invalid_param' === $code ) {
-				$message .= 'Invalid data was returned.\\n';
-			}
-
-			if ( str_contains( $code, '_missing_' ) ) {
-				$message .= 'Data is missing. We provided:\\n';
-				$message .= json_encode( $body );
-			}
-
-			$order = new WP_Error( $code, $message );
-
-		}else{
-
-			$order_id = $response_object->order_id;
-			$order = wc_get_order( $order_id );
-
-			if( ! is_a( $order, 'WC_Order') ){
-				$order = new WP_Error( 'invalid_order_id', 'Order ID failed to return an order' );
-			}
+		} catch ( \Exception $e ) {
+			Logger::log_exception( 'Exception during checkout', $e, [
+				'user_id' => $options['user_id'],
+				'payment_method' => $options['payment_method']
+			] );
+			$order = new WP_Error( 'checkout_exception', 'Checkout failed: ' . $e->getMessage() );
 		}
 
 		return $order;
 	}
 
 	/**
-	 * Add to the current cart using the Store API batch endpoint. Requires an array
-	 * of cart items.
-	 *
-	 * todo the response from this can get pretty big, we may need to limit
-	 * output or the number of cart items maximum
-	 *
-	 *
-	 * @param array $cart_items
-	 *
-	 * @return array|false The payment methods available for the cart or false on Error
+	 * Refresh the nonce if it has expired
+	 * 
+	 * @return bool True if nonce was refreshed, false otherwise
 	 */
-	public function add_to_cart( array $cart_items = array() ): array|false {
-
-		if ( empty( $cart_items ) ) {
-			Logger::log( 'add_to_cart: No cart items provided' );
-			return false;
+	public function refresh_nonce(): bool {
+		Logger::info( 'Attempting to refresh nonce' );
+		
+		$new_nonce = $this->get_nonce();
+		if ( $new_nonce ) {
+			$this->nonce = $new_nonce;
+			$this->http_client->authenticate( $new_nonce );
+			Logger::info( 'Nonce refreshed successfully' );
+			return true;
 		}
-
-		Logger::log( 'add_to_cart: Starting with ' . count( $cart_items ) . ' items' );
-
-		// Separate bundle items from regular items
-		$bundle_items = array();
-		$regular_items = array();
-
-		foreach ( $cart_items as $cart_item ) {
-			if ( isset( $cart_item['is_bundle'] ) && $cart_item['is_bundle'] ) {
-				$bundle_items[] = $cart_item;
-			} else {
-				$regular_items[] = $cart_item;
-			}
-		}
-
-		// Handle bundle items using Product Bundles plugin's direct method
-		if ( ! empty( $bundle_items ) ) {
-			Logger::log( 'add_to_cart: Processing ' . count( $bundle_items ) . ' bundle items' );
-			
-			// Check if Product Bundles plugin is available
-			if ( class_exists( 'WC_PB_Cart' ) ) {
-				$pb_cart = WC_PB_Cart::instance();
-				
-				foreach ( $bundle_items as $bundle_item ) {
-					$product_id = $bundle_item['id'];
-					$quantity = $bundle_item['quantity'];
-					$configuration = $bundle_item['bundle_configuration'];
-					
-					Logger::log( 'add_to_cart: Adding bundle to cart - Product ID: ' . $product_id . ', Quantity: ' . $quantity );
-					Logger::log( 'add_to_cart: Bundle configuration: ' . json_encode( $configuration ) );
-					
-					$result = $pb_cart->add_bundle_to_cart( $product_id, $quantity, $configuration );
-					
-					if ( is_wp_error( $result ) ) {
-						Logger::log( 'add_to_cart: Error adding bundle to cart: ' . $result->get_error_message() );
-						return false;
-					} else {
-						Logger::log( 'add_to_cart: Bundle added to cart successfully' );
-					}
-				}
-			} else {
-				Logger::log( 'add_to_cart: Product Bundles plugin not available for bundle items' );
-				return false;
-			}
-		}
-
-		// Handle regular items using Store API
-		if ( ! empty( $regular_items ) ) {
-			Logger::log( 'add_to_cart: Processing ' . count( $regular_items ) . ' regular items via Store API' );
-			
-			$url = get_bloginfo( 'url' ) . '/wp-json/wc/store/v1/batch';
-
-			$body['requests'] = array();
-
-			foreach ( $regular_items as $cart_item ) {
-				Logger::log( 'add_to_cart: Processing regular item - ' . json_encode( $cart_item ) );
-
-				$body['requests'][] = array(
-					'path'    => '/wc/store/v1/cart/add-item',
-					'method'  => 'POST',
-					'cache'   => 'no-store',
-					'body'    => $cart_item,
-					'headers' => array(
-						'Nonce' => $this->nonce
-					)
-				);
-			}
-
-			$args = array(
-				'headers' => array(
-					'nonce' => $this->nonce
-				),
-				'timeout' => 20,
-				'body'    => $body
-			);
-
-			Logger::log( 'add_to_cart: Sending request to Store API' );
-			$response_body = $this->get_post_response( $url, $args );
-
-			Logger::log( 'add_to_cart: Response received - ' . substr( $response_body, 0, 200 ) . '...' );
-
-			/**
-			 * This is not an error but could still be an unexpected response.
-			 * Check cart contents and bail if we're broken.
-			 */
-			$cart = json_decode( $response_body );
-
-			if ( ! isset( $cart->responses[0]->body->items[0] ) ) {
-				Logger::log( 'Unexpected response from add to cart' );
-				Logger::log( 'REQUEST' );
-				Logger::log( $regular_items );
-				Logger::log( 'RESPONSE' );
-				Logger::log( $cart );
-				return false;
-			}
-
-			Logger::log( 'add_to_cart: Successfully added regular items to cart' );
-
-			/**
-			 * Get the payment method
-			 */
-			$assigned_payment_methods = $cart->responses[0]->body->payment_methods;
-			for ( $i = 0; $i < count( $cart->responses ); $i ++ ) {
-				if ( $cart->responses[ $i ]->body->payment_methods ) {
-					$assigned_payment_methods = array_intersect( $cart->responses[ $i ]->body->payment_methods, $assigned_payment_methods );
-				}
-			}
-
-			Logger::log( 'add_to_cart: Available payment methods - ' . json_encode( $assigned_payment_methods ) );
-
-			return $assigned_payment_methods;
-		}
-
-		// If we only had bundle items, return default payment methods
-		if ( ! empty( $bundle_items ) && empty( $regular_items ) ) {
-			Logger::log( 'add_to_cart: Only bundle items processed, returning default payment methods' );
-			return array( 'bacs' );
-		}
-
+		
+		Logger::error( 'Failed to refresh nonce' );
 		return false;
 	}
 
 	/**
-	 * Wrapper for wp_safe_remote_post. Handles errors, returns response body
-	 * as a JSON strong.
-	 *
-	 * @param $url
-	 * @param $args
-	 *
-	 * @return string
+	 * Get the current nonce
+	 * 
+	 * @return string|null The current nonce or null if not set
 	 */
-	private function get_post_response( $url, $args ): string {
-
-		Logger::log( 'get_post_response: Making request to ' . $url );
-
-		if ( $this->skip_ssl ) {
-			add_filter( 'https_ssl_verify', '__return_false' );
-		}
-		$response = wp_safe_remote_post( $url, $args );
-		remove_filter( 'https_ssl_verify', '__return_false' );
-
-		if ( is_wp_error( $response ) ) {
-			Logger::log( 'get_post_response: WP Error occurred' );
-			$this->handle_error_response( $response );
-		} else {
-			Logger::log( 'get_post_response: Request successful, status: ' . wp_remote_retrieve_response_code( $response ) );
-			$this->cookies = $response['cookies'];
-		}
-
-		$body = wp_remote_retrieve_body( $response );
-		Logger::log( 'get_post_response: Response body length: ' . strlen( $body ) );
-
-		return $body;
+	public function get_current_nonce(): ?string {
+		return $this->nonce;
 	}
 
 	/**
-	 * Handle error logging for errors.
-	 *
-	 * @param $response
-	 *
-	 * @return void
+	 * Check if the order builder is properly authenticated
+	 * 
+	 * @return bool True if authenticated
 	 */
-	private function handle_error_response( $response ): void {
-		Logger::log( 'Error occurred during order build: ' . $response->get_error_message() );
-		Logger::log( 'Error code: ' . $response->get_error_code() );
+	public function is_authenticated(): bool {
+		return ! empty( $this->nonce ) && $this->http_client->is_authenticated();
 	}
-
 }
