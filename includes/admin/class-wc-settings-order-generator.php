@@ -139,6 +139,20 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'class'    => 'wc-enhanced-select'
 			),
 			array(
+				'title'    => __( 'Order attribution', 'happy-order-generator' ),
+				'desc_tip' => true,
+				'id'       => 'hog_order_attribution',
+				'desc'     => __( 'If enabled, generated orders get plausible WooCommerce order attribution data (source, referrer, device) so they appear in attribution reports instead of "Unknown".', 'happy-order-generator' ),
+				'type'     => 'select',
+				'options'  => array(
+					'no'  => __( 'No - leave order attribution empty', 'happy-order-generator' ),
+					'yes' => __( 'Yes - add order attribution data', 'happy-order-generator' )
+				),
+				'value'    => ( isset( $settings['order_attribution'] ) ) ? $settings['order_attribution'] : 'no',
+				'autoload' => false,
+				'class'    => 'wc-enhanced-select'
+			),
+			array(
 				'title'    => __( 'New customer locales', 'happy-order-generator' ),
 				'desc'     => __( 'Billing country for new users. Leave empty to randomly generate.', 'happy-order-generator' ),
 				'id'       => 'hog_customer_locales',
@@ -249,6 +263,7 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 			'customer_naming_convention' => sanitize_text_field( $_POST['hog_customer_naming_convention'] ?? 'faker' ),
 			'customer_email_convention'  => sanitize_text_field( $_POST['hog_customer_email_convention'] ?? 'faker' ),
 			'skip_ssl'                   => absint( $_POST['hog_skip_ssl'] ?? 0 ),
+			'order_attribution'          => ( ( $_POST['hog_order_attribution'] ?? 'no' ) === 'yes' ) ? 'yes' : 'no',
 			'enable_debug'               => ( $_POST['hog_debug'] == '1' ) ? 'yes' : 'no',
 		);
 
