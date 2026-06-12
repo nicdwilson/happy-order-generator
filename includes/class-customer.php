@@ -127,6 +127,10 @@ class Customer {
 			'shipping_email'       => $faker->email(),
 			'shipping_phone'       => $faker->phoneNumber(),
 			'_customer_ip_address' => $faker->ipv4(),
+			// Identifies users created by the plugin, mirroring the
+			// _happy_order_generator_order meta on generated orders so
+			// generated customers can be found and purged.
+			'_happy_order_generator_user' => 1,
 			'billing_company'      => '',
 			'billing_address_2'    => '',
 			'shipping_company'     => '',
