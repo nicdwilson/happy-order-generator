@@ -28,7 +28,7 @@ class Logger {
 
 		$settings = Order_Generator::get_settings();
 
-		if( $settings['enable_debug'] !== 'yes' ){
+		if( ( $settings['enable_debug'] ?? 'no' ) !== 'yes' ){
 			return;
 		}
 
@@ -40,7 +40,7 @@ class Logger {
 		if( is_wp_error( $message )){
 
 			self::$logger->debug( $message->get_code(), array( 'source' => self::LOG_NAME ) );
-			self::$logger->error( $message->get_all_error_messages(), array( 'source' => self::LOG_NAME ) );
+			self::$logger->error( implode( ', ', $message->get_error_messages() ), array( 'source' => self::LOG_NAME ) );
 			return;
 		}
 
