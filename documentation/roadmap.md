@@ -28,18 +28,20 @@ Decided June 2026:
 
 Ordered roughly by severity. Each item should land with a unit test where practical (see Phase 4).
 
+**Status (June 2026):** all five pre-existing `dev`-track bugs (1.1, 1.3, 1.4, 1.5, 1.7) are fixed and merged to `dev`. The remaining items (1.2, 1.6, and the branch-only parts of 1.8) are deferred to the bundles branch on Phase 2 resumption.
+
 **Where each bug lives** (verified against `main`):
 
-| Bug | Exists on `dev`/`main`? | Fix via |
-|---|---|---|
-| 1.1 Settings key mismatch | Yes (pre-existing) | `fix/settings-option-key` off `dev` |
-| 1.2 Wrong `bundled_item_id` | No — branch-only code | Bundles branch, on resumption |
-| 1.3 `log_customer_in()` reads `$_POST` | Yes (pre-existing) | `fix/store-api-customer-login` off `dev` |
-| 1.4 Logger `WP_Error` fatal + unguarded setting | Yes (pre-existing; branch has a rewritten Logger with the same `get_all_error_messages()` bug — fix both) | `fix/logger-wp-error` off `dev`, re-apply on branch rebase |
-| 1.5 Scheduler `=` vs `==` | Yes (pre-existing) | `fix/scheduler-interval-check` off `dev` |
-| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption |
-| 1.7 `subscription_variation` not detected | Yes (pre-existing) | `fix/subscription-variation-detection` off `dev` |
-| 1.8 Smaller items | Mixed — text domain, dead `check()`/`admin_notices()` are on `dev`; `Order_Builder` leftovers are branch-only | Split accordingly |
+| Bug | Exists on `dev`/`main`? | Fix via | Status |
+|---|---|---|---|
+| 1.1 Settings key mismatch | Yes (pre-existing) | `fix/settings-option-key` off `dev` | ✅ merged (#3) |
+| 1.2 Wrong `bundled_item_id` | No — branch-only code | Bundles branch, on resumption | ⬜ deferred to Phase 2 |
+| 1.3 `log_customer_in()` reads `$_POST` | Yes (pre-existing) | `fix/store-api-customer-login` off `dev` | ✅ merged (#4) |
+| 1.4 Logger `WP_Error` fatal + unguarded setting | Yes (pre-existing; branch has a rewritten Logger with the same `get_all_error_messages()` bug — fix both) | `fix/logger-wp-error` off `dev`, re-apply on branch rebase | ✅ merged (#5); re-apply on branch rebase |
+| 1.5 Scheduler `=` vs `==` | Yes (pre-existing) | `fix/scheduler-interval-check` off `dev` | ✅ merged (#6) |
+| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption | ⬜ deferred to Phase 2 |
+| 1.7 `subscription_variation` not detected | Yes (pre-existing) | `fix/subscription-variation-detection` off `dev` | ✅ merged (#7) |
+| 1.8 Smaller items | Mixed — text domain, dead `check()`/`admin_notices()` are on `dev`; `Order_Builder` leftovers are branch-only | Split accordingly | ⬜ pending (dev-side parts open) |
 
 ### 1.1 Settings option key mismatch (high — wrong runtime config)
 - `Generator::__construct()` (`includes/class-generator.php:63`) reads `wc_order_generator_settings`, but the settings page saves to `happy_order_generator_settings` (`includes/admin/class-wc-settings-order-generator.php:310`). The status-percentage settings the Generator uses are therefore stale or empty.
@@ -77,6 +79,23 @@ Ordered roughly by severity. Each item should land with a unit test where practi
 - `Order_Builder` retains unused `$cookies` property and leftover state from before the refactor.
 - `Order_Generator::check()` and `admin_notices()` exist but are never invoked — wire up the version checks on `plugins_loaded` + `admin_notices`, or remove them.
 - Wrong text domain in `woocommerce-order-generator.php:160` (`'Happy Order Generator'` instead of `'happy-order-generator'`).
+
+## Phase 1.5 — Generation enhancements
+
+Two small, self-contained feature requests that improve the generated data and its cleanup. Both target **v1.1.0** and follow the same workflow as Phase 1: one `feat/<slug>` branch off `dev`, one PR each, with a unit test where practical.
+
+### 1.5.1 Mark generated users with identifying meta ([#1](https://github.com/nicdwilson/happy-order-generator/issues/1))
+- Generated orders already carry `_happy_order_generator_order = 1` (`includes/class-generator.php` / `Order_Builder`), which lets a site purge generated orders. Users created by the plugin have no equivalent marker, so generated customers can't be cleanly identified or removed.
+- **Fix:** when `Customer` creates a new user, write a `_happy_order_generator_user` (value `1`) user meta. Mirror the order-meta convention exactly so the two are symmetrical.
+- Wire it into the Phase 3 `uninstall.php` cleanup (delete generated users behind the same opt-in constant that gates generated-order deletion), and document the meta key alongside the existing `_happy_order_generator_order` tip in the `readme.txt` FAQ.
+- **Branch:** `feat/generated-user-meta` off `dev`.
+
+### 1.5.2 Add order attribution data to generated orders ([#2](https://github.com/nicdwilson/happy-order-generator/issues/2))
+- WooCommerce records **Order Attribution** (source type, referrer, UTM params, device, session data) via the Order Attribution feature, stored as `_wc_order_attribution_*` order meta. Generated orders currently have none, so attribution reports treat them as `(none)`/unknown — less realistic test data.
+- **Fix:** after checkout, set a plausible spread of `_wc_order_attribution_*` meta on generated orders (e.g. randomly distribute across `organic`, `referral`, `typein`, `utm`, `admin`), behind a setting so it can be toggled off. Reuse WooCommerce's documented meta keys rather than inventing our own; verify against the `WC_Order_Attribution` source for the pinned WC version.
+- Add the distribution to the settings page (Phase 3 `Settings` class) and cover the mapping with a unit test in Phase 4.
+- **Note:** the stale `feat/add-order-attribution-data` branch is an old pointer behind `dev` with no unique commits — start fresh from `dev` (or hard-reset it) rather than building on it.
+- **Branch:** `feat/order-attribution-data` off `dev`.
 
 ## Phase 2 — Finalize the Product Bundles integration
 
@@ -193,8 +212,9 @@ The Stripe integration talks to Stripe's API directly via `WC_Stripe_API::reques
 
 | Milestone | Contents | Size |
 |---|---|---|
-| 1 | Phase 0 + Phase 1 (bugs) | S–M |
-| 2 | Phase 2 (bundles complete, PR merged) | M |
-| 3 | Phase 3 (standards, tooling) + Phase 4 unit tests | M–L |
-| 4 | Phase 4 e2e + CI, then Phase 5 release v1.1.0 | M |
-| 5 | Phase 6 spike → WooPayments integration → v1.2.0 | L |
+| 1 | Phase 0 + Phase 1 (bugs) ✅ dev-track bugs merged | S–M |
+| 2 | Phase 1.5 (generation enhancements: #1, #2) | S |
+| 3 | Phase 2 (bundles complete, PR merged) | M |
+| 4 | Phase 3 (standards, tooling) + Phase 4 unit tests | M–L |
+| 5 | Phase 4 e2e + CI, then Phase 5 release v1.1.0 | M |
+| 6 | Phase 6 spike → WooPayments integration → v1.2.0 | L |
