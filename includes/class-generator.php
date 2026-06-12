@@ -220,7 +220,12 @@ class Generator {
 		foreach ( $cart_items as $cart_item ) {
 
 			$product = wc_get_product( $cart_item['id'] );
-			if ( $product->is_type( 'subscription' ) || $product->is_type( 'variable-subscription' ) ) {
+
+			if ( ! $product ) {
+				continue;
+			}
+
+			if ( $product->is_type( 'subscription' ) || $product->is_type( 'variable-subscription' ) || $product->is_type( 'subscription_variation' ) ) {
 				return true;
 			}
 		}
