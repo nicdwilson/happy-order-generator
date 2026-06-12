@@ -130,7 +130,17 @@ class Order_Generator {
 	 */
 	public function log_customer_in( $customer, $request ): void {
 
-		$user = get_user_by( 'email', sanitize_email( $_POST['billing_address']['email'] ) );
+		/**
+		 * Store API checkout requests carry a JSON body, so $_POST is empty.
+		 * Read the email from the request object provided by the hook.
+		 */
+		$billing_address = $request['billing_address'] ?? array();
+
+		if ( empty( $billing_address['email'] ) ) {
+			return;
+		}
+
+		$user = get_user_by( 'email', sanitize_email( $billing_address['email'] ) );
 
 		if ( $user ) {
 			wc_set_customer_auth_cookie( $user->ID );
