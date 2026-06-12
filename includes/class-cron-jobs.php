@@ -70,7 +70,7 @@ class Cron_Jobs {
 		$this->settings['interval']   = ( isset( $this->settings['interval'] ) ) ? $this->settings['interval'] : 0;
 
 		//todo if current action is okay, leave it.
-		if ( $this->settings['batch_size'] == $args['batch_size'] && $this->settings['interval'] = $interval_in_seconds ) {
+		if ( $this->settings['batch_size'] == $args['batch_size'] && $this->settings['interval'] == $interval_in_seconds ) {
 			if ( as_has_scheduled_action( $this->action_hook ) ) {
 				return;
 			}
