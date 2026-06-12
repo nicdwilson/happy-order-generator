@@ -174,6 +174,18 @@ class Generator {
 		 */
 		$order->add_order_note( __( 'Order created by Order Generator', 'happy-order-generator' ) );
 		$order->update_meta_data( '_happy_order_generator_order', 1 );
+
+		/**
+		 * Optionally give the order plausible WooCommerce order attribution
+		 * data so generated orders show up in the attribution reports rather
+		 * than landing in "Unknown".
+		 */
+		if ( 'yes' === ( $this->settings['order_attribution'] ?? 'no' ) ) {
+			foreach ( $this->generate_attribution_meta() as $meta_key => $meta_value ) {
+				$order->update_meta_data( $meta_key, $meta_value );
+			}
+		}
+
 		$order->save();
 
 		Logger::log( __('Order ID ' . $order->get_id() . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'], 'happy-order-generator' ) );
@@ -256,5 +268,91 @@ class Generator {
 		}
 
 		return $status;
+	}
+
+	/**
+	 * Build a plausible set of WooCommerce order attribution meta for a
+	 * generated order.
+	 *
+	 * Mirrors the meta keys written by WC_Order_Attribution (the
+	 * `_wc_order_attribution_*` order meta) so generated orders are
+	 * classified into a real origin in the attribution reports instead of
+	 * "Unknown". The set is picked at random from a spread of common origins
+	 * (organic search, referral, direct, a UTM campaign, and web admin) and
+	 * paired with a random device. Keys follow WooCommerce's documented
+	 * attribution meta; verify against WC_Order_Attribution for the pinned
+	 * WooCommerce version when bumping the supported range.
+	 *
+	 * @return array<string, string> Map of `_wc_order_attribution_*` meta keys to values.
+	 */
+	private function generate_attribution_meta(): array {
+
+		$user_agents = array(
+			'Desktop' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+			'Mobile'  => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+			'Tablet'  => 'Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+		);
+
+		/**
+		 * Each preset mirrors how WC_Order_Attribution classifies an origin.
+		 * `source_type` is the field that drives the Origin column; the UTM and
+		 * referrer fields fill in the detail WooCommerce shows alongside it.
+		 */
+		$sources = array(
+			array(
+				'source_type'  => 'organic',
+				'utm_source'   => 'google',
+				'utm_medium'   => 'organic',
+				'referrer'     => 'https://www.google.com/',
+			),
+			array(
+				'source_type'  => 'referral',
+				'utm_source'   => 'wordpress.org',
+				'utm_medium'   => 'referral',
+				'referrer'     => 'https://wordpress.org/',
+			),
+			array(
+				'source_type'  => 'utm',
+				'utm_source'   => 'newsletter',
+				'utm_medium'   => 'email',
+				'utm_campaign' => 'spring_sale',
+				'referrer'     => '',
+			),
+			array(
+				'source_type'  => 'typein',
+				'utm_source'   => '(direct)',
+				'utm_medium'   => '(none)',
+				'referrer'     => '',
+			),
+			array(
+				'source_type'  => 'admin',
+				'utm_source'   => 'admin',
+				'utm_medium'   => 'admin',
+				'referrer'     => '',
+			),
+		);
+
+		$source      = $sources[ wp_rand( 0, count( $sources ) - 1 ) ];
+		$device_keys = array_keys( $user_agents );
+		$device_type = $device_keys[ wp_rand( 0, count( $device_keys ) - 1 ) ];
+
+		$meta = array(
+			'_wc_order_attribution_source_type'       => $source['source_type'],
+			'_wc_order_attribution_utm_source'        => $source['utm_source'],
+			'_wc_order_attribution_utm_medium'        => $source['utm_medium'],
+			'_wc_order_attribution_referrer'          => $source['referrer'],
+			'_wc_order_attribution_device_type'       => $device_type,
+			'_wc_order_attribution_user_agent'        => $user_agents[ $device_type ],
+			'_wc_order_attribution_session_entry'     => home_url( '/' ),
+			'_wc_order_attribution_session_start_time' => gmdate( 'Y-m-d H:i:s' ),
+			'_wc_order_attribution_session_pages'     => (string) wp_rand( 1, 12 ),
+			'_wc_order_attribution_session_count'     => (string) wp_rand( 1, 5 ),
+		);
+
+		if ( ! empty( $source['utm_campaign'] ) ) {
+			$meta['_wc_order_attribution_utm_campaign'] = $source['utm_campaign'];
+		}
+
+		return $meta;
 	}
 }
