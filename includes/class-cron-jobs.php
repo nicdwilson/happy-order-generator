@@ -66,8 +66,10 @@ class Cron_Jobs {
 		$args['batch_size']  = $this->get_batch_size();
 		$interval_in_seconds = $this->get_interval_in_seconds();
 
-		$this->settings['batch_size'] = ( isset( $this->settings['batch_size'] ) ) ? $this->settings['batch_size'] : 0;
-		$this->settings['interval']   = ( isset( $this->settings['interval'] ) ) ? $this->settings['interval'] : 0;
+		$scheduler_state = get_option( 'hog_scheduler_state', array() );
+
+		$this->settings['batch_size'] = ( isset( $scheduler_state['batch_size'] ) ) ? $scheduler_state['batch_size'] : 0;
+		$this->settings['interval']   = ( isset( $scheduler_state['interval'] ) ) ? $scheduler_state['interval'] : 0;
 
 		//todo if current action is okay, leave it.
 		if ( $this->settings['batch_size'] == $args['batch_size'] && $this->settings['interval'] == $interval_in_seconds ) {
@@ -80,10 +82,10 @@ class Cron_Jobs {
 
 		$result = as_schedule_recurring_action( time(), $interval_in_seconds, $this->action_hook, $args, 'happy-order-generator', true );
 
-		$this->settings['batch_size'] = $args['batch_size'];
-		$this->settings['interval']   = $interval_in_seconds;
-
-		update_option( 'wc_order_generator_settings', $this->settings );
+		update_option( 'hog_scheduler_state', array(
+			'batch_size' => $args['batch_size'],
+			'interval'   => $interval_in_seconds,
+		) );
 
 	}
 

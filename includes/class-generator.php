@@ -60,7 +60,7 @@ class Generator {
 
 	public function __construct() {
 
-		$this->settings = get_option( 'wc_order_generator_settings', array() );
+		$this->settings = Order_Generator::get_settings();
 
 
 	}
