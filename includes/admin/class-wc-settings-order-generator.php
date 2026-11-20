@@ -254,14 +254,15 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 			'orders_per_hour'            => absint( $_POST['hog_orders_per_hour'] ?? 0 ),
 			'min_order_products'         => absint( $_POST['hog_min_order_products'] ?? 1 ),
 			'max_order_products'         => absint( $_POST['hog_max_order_products'] ?? 1 ),
-			'create_users'               => (bool) $_POST['hog_create_users'],
+			'create_users'               => ! empty( $_POST['hog_create_users'] ),
 			'order_completed_pct'        => absint( $_POST['hog_order_completed_pct'] ?? 0 ),
 			'order_processing_pct'       => absint( $_POST['hog_order_processing_pct'] ?? 90 ),
 			'order_failed_pct'           => absint( $_POST['hog_order_failed_pct'] ?? 10 ),
 			'customer_naming_convention' => sanitize_text_field( $_POST['hog_customer_naming_convention'] ?? 'faker' ),
 			'customer_email_convention'  => sanitize_text_field( $_POST['hog_customer_email_convention'] ?? 'faker' ),
 			'skip_ssl'                   => absint( $_POST['hog_skip_ssl'] ?? 0 ),
-			'enable_debug'               => ( $_POST['hog_debug'] == '1' ) ? 'yes' : 'no',
+			// Unticked checkboxes aren't posted at all.
+			'enable_debug'               => isset( $_POST['hog_debug'] ) && '1' === (string) $_POST['hog_debug'] ? 'yes' : 'no',
 		);
 
 		/**
