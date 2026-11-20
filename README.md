@@ -23,7 +23,7 @@ This is
 
 The whole thing is fairly self-explanatory and is found at WooCommerce > Settings > Order Generator.
 
-### Nothing happens until there is a number in orders per hour.
+### Nothing happens until orders per hour is set to 1 or more. Setting it back to 0 stops generation.
 
 - Enable/Disable – the first setting on the page. Untick it to pause order generation without deactivating the plugin: scheduled actions are removed and nothing is generated until you tick it again. Your other settings are kept. Existing sites stay enabled after updating.
 - Orders per hour – for the sake of your sanity, don’t go too high. This isn’t throttled, but you’ll hit the practical timing limits of the Action Scheduler actions at 180 orders an hour, which is plenty too much anyway. 20 orders an hour gives you 175 200 a year. Remember, this is set-and-forget. You may start logging cURL errors if you push it too far over 60 an hour anyway. It will depend on your site.
