@@ -124,12 +124,16 @@ function pluginPhpIssues( log ) {
 		.filter( ( line ) => /plugins\/happy-order-generator\//.test( line ) && ! /happy-order-generator\/vendor\//.test( line ) );
 }
 
-async function loginAsAdmin( page ) {
+async function login( page, username, password ) {
 	await page.goto( '/wp-login.php' );
-	await page.locator( '#user_login' ).fill( ADMIN_USER );
-	await page.locator( '#user_pass' ).fill( ADMIN_PASSWORD );
+	await page.locator( '#user_login' ).fill( username );
+	await page.locator( '#user_pass' ).fill( password );
 	await page.locator( '#wp-submit' ).click();
 	await page.waitForURL( /wp-admin/ );
+}
+
+async function loginAsAdmin( page ) {
+	await login( page, ADMIN_USER, ADMIN_PASSWORD );
 }
 
 const SETTINGS_URL = '/wp-admin/admin.php?page=wc-settings&tab=order_generator';
@@ -148,6 +152,7 @@ module.exports = {
 	readDebugLog,
 	clearDebugLog,
 	pluginPhpIssues,
+	login,
 	loginAsAdmin,
 	SETTINGS_URL,
 	DEFAULT_SETTINGS,
