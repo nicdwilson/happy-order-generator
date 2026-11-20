@@ -152,10 +152,12 @@ class Gateway_Integration_Stripe {
 
 		// PaymentContext exposes these through __get() without __isset(), so
 		// read them directly: ?? / isset() would always see them as unset.
+		// @phpstan-ignore property.protected (public read through PaymentContext::__get())
 		if ( 'stripe' !== $context->payment_method ) {
 			return;
 		}
 
+		// @phpstan-ignore property.protected (public read through PaymentContext::__get())
 		$payment_data = (array) $context->payment_data;
 
 		if ( ! array_key_exists( 'final_status', $payment_data ) ) {

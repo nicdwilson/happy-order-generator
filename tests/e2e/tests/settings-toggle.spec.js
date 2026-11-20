@@ -89,7 +89,6 @@ test.describe( 'Enable/Disable toggle', () => {
 	} );
 
 	test( 'saving settings raised no PHP notices, warnings or errors', async () => {
-		test.fail( true, 'Known bug: WC_Settings_Order_Generator_Settings::save() reads $_POST["hog_debug"] (and hog_create_users) without isset(), so saving with logging unticked warns.' );
 		const issues = pluginPhpIssues( await readDebugLog() );
 		expect( issues, issues.join( '\n' ) ).toEqual( [] );
 	} );
