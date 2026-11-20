@@ -55,9 +55,42 @@ class Cron_Jobs {
 		$this->setup_action_scheduler();
 
 		add_action( 'create_happy_orders', array( $this, 'create_orders') , 10, 1 );
+
+		/**
+		 * Re-sync the schedule as soon as the settings change, so switching
+		 * the generator off (or back on) takes effect immediately rather than
+		 * on the next request.
+		 */
+		add_action( 'add_option_happy_order_generator_settings', array( $this, 'on_settings_updated' ), 10, 0 );
+		add_action( 'update_option_happy_order_generator_settings', array( $this, 'on_settings_updated' ), 10, 0 );
+	}
+
+	/**
+	 * Reloads the settings and re-syncs the scheduled action after a save.
+	 *
+	 * @return void
+	 */
+	public function on_settings_updated(): void {
+
+		$this->settings = Order_Generator::get_settings();
+
+		$this->setup_action_scheduler();
 	}
 
 	public function setup_action_scheduler(): void {
+
+		/**
+		 * When generation is switched off, remove any pending action and stop.
+		 * Only pending actions are checked: one that is already running can't
+		 * be cancelled, and create_orders() refuses to run while disabled.
+		 */
+		if ( ! Order_Generator::is_enabled() ) {
+			if ( $this->has_pending_action() ) {
+				as_unschedule_all_actions( $this->action_hook );
+				Logger::log( 'Order generation disabled: scheduled actions removed' );
+			}
+			return;
+		}
 
 		if( empty( $this->settings ) ){
 			return;
@@ -85,6 +118,25 @@ class Cron_Jobs {
 
 		update_option( 'wc_order_generator_settings', $this->settings );
 
+	}
+
+	/**
+	 * Whether a pending (not yet started) generation action exists.
+	 *
+	 * @return bool
+	 */
+	private function has_pending_action(): bool {
+
+		$pending = as_get_scheduled_actions(
+			array(
+				'hook'     => $this->action_hook,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => 1,
+			),
+			'ids'
+		);
+
+		return ! empty( $pending );
 	}
 
 	/**
@@ -131,6 +183,15 @@ class Cron_Jobs {
 	 * @throws \WC_Stripe_Exception
 	 */
 	public function create_orders( $args = 1 ): void {
+
+		/**
+		 * An action may already be claimed by a queue runner when generation
+		 * is switched off, so check again before creating anything.
+		 */
+		if ( ! Order_Generator::is_enabled() ) {
+			Logger::log( 'Order generation is disabled: skipping scheduled batch' );
+			return;
+		}
 
 		Logger::log( PHP_EOL . 'Generating batch of ' . $args . ' orders' );
 

@@ -150,6 +150,31 @@ class Order_Generator {
 	}
 
 	/**
+	 * Whether order generation is switched on.
+	 *
+	 * This is separate from the plugin being active: it lets order generation
+	 * be paused from the settings page without deactivating the plugin or
+	 * losing the configuration. Sites that saved settings before this option
+	 * existed have no 'enabled' key, so a missing value counts as enabled to
+	 * keep their current behaviour.
+	 *
+	 * @return bool
+	 */
+	public static function is_enabled(): bool {
+
+		$settings = self::get_settings();
+		$enabled  = 'no' !== ( $settings['enabled'] ?? 'yes' );
+
+		/**
+		 * Filters whether Happy Order Generator should generate orders.
+		 *
+		 * @param bool  $enabled  Whether order generation is enabled.
+		 * @param array $settings The plugin settings.
+		 */
+		return (bool) apply_filters( 'hog_is_enabled', $enabled, $settings );
+	}
+
+	/**
 	 * Checks if the plugin should load.
 	 *
 	 * @return bool
