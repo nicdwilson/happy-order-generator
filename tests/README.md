@@ -48,6 +48,24 @@ Inside the wp-env containers the site URL (`localhost:8890`) isn't the web
 server, so the plugin's Store API loopback requests are rerouted to the
 WordPress container. It is never shipped and never used under QIT.
 
+### Product Bundles tests
+
+`tests/bundles.spec.js` needs Product Bundles, a licensed extension, so it
+skips when Product Bundles isn't active (as in CI). To run it locally, mount
+your copy with a `tests/e2e/.wp-env.override.json` file (gitignored):
+
+```json
+{
+	"plugins": [
+		"https://downloads.wordpress.org/plugin/woocommerce.latest-stable.zip",
+		"../..",
+		"/path/to/woocommerce-product-bundles"
+	]
+}
+```
+
+Then restart with `npm run env:start`.
+
 ### Known failures
 
 There are none at the moment. When a test exposes a bug that isn't fixed
