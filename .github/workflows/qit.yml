@@ -38,9 +38,6 @@ jobs:
   security:
     name: Security (PHPCS WordPress.Security + WordPress.DB)
     runs-on: ubuntu-24.04
-    # Existing findings on main are tracked in tests/README.md. Remove this
-    # line once they are fixed, so new findings block merges.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2

@@ -51,7 +51,6 @@ test.describe( 'Activation', () => {
 	} );
 
 	test( 'a guest can check out while the plugin is active', async ( { playwright, baseURL } ) => {
-		test.fail( true, 'Known bug: Gateway_Integration_Stripe::do_failure_check() runs on every Store API checkout and sets real orders to pending (HTTP 202).' );
 		const productId = await productIdBySlug( 'hog-e2e-product' );
 		expect( productId ).toBeGreaterThan( 0 );
 
@@ -95,7 +94,6 @@ test.describe( 'Activation', () => {
 	} );
 
 	test( 'raised no PHP notices, warnings or errors', async () => {
-		test.fail( true, 'Known bug: do_failure_check() reads payment_data["final_status"] without isset() (class-gateway-integration-stripe.php).' );
 		const issues = pluginPhpIssues( await readDebugLog() );
 		expect( issues, issues.join( '\n' ) ).toEqual( [] );
 	} );

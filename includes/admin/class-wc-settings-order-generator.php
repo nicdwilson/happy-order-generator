@@ -260,35 +260,33 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 	 */
 	public function save(): void {
 
+		/**
+		 * WC_Admin_Settings::save() checks both of these before it fires
+		 * woocommerce_settings_save_{tab}. Checking again here keeps this
+		 * method safe if it's ever called from somewhere else.
+		 */
+		check_admin_referer( 'woocommerce-settings' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
+		}
+
 		$settings = array(
-			'enabled'                    => isset( $_POST['hog_enabled'] ) && '1' === (string) $_POST['hog_enabled'] ? 'yes' : 'no',
-			'orders_per_hour'            => max( 0, (int) ( $_POST['hog_orders_per_hour'] ?? 0 ) ),
+			'enabled'                    => $this->posted_checkbox( 'hog_enabled' ),
+			'orders_per_hour'            => max( 0, intval( $_POST['hog_orders_per_hour'] ?? 0 ) ),
 			'min_order_products'         => absint( $_POST['hog_min_order_products'] ?? 1 ),
 			'max_order_products'         => absint( $_POST['hog_max_order_products'] ?? 1 ),
-			'create_users'               => ! empty( $_POST['hog_create_users'] ),
+			'create_users'               => ! empty( absint( $_POST['hog_create_users'] ?? 0 ) ),
 			'order_completed_pct'        => absint( $_POST['hog_order_completed_pct'] ?? 0 ),
 			'order_processing_pct'       => absint( $_POST['hog_order_processing_pct'] ?? 90 ),
 			'order_failed_pct'           => absint( $_POST['hog_order_failed_pct'] ?? 10 ),
-			'customer_naming_convention' => sanitize_text_field( $_POST['hog_customer_naming_convention'] ?? 'faker' ),
-			'customer_email_convention'  => sanitize_text_field( $_POST['hog_customer_email_convention'] ?? 'faker' ),
+			'customer_naming_convention' => sanitize_text_field( wp_unslash( $_POST['hog_customer_naming_convention'] ?? 'faker' ) ),
+			'customer_email_convention'  => sanitize_text_field( wp_unslash( $_POST['hog_customer_email_convention'] ?? 'faker' ) ),
 			'skip_ssl'                   => absint( $_POST['hog_skip_ssl'] ?? 0 ),
-			// Unticked checkboxes aren't posted at all.
-			'enable_debug'               => isset( $_POST['hog_debug'] ) && '1' === (string) $_POST['hog_debug'] ? 'yes' : 'no',
+			'enable_debug'               => $this->posted_checkbox( 'hog_debug' ),
+			'products'                   => $this->posted_list( 'hog_products' ),
+			'customer_locales'           => $this->posted_list( 'hog_customer_locales' ),
 		);
-
-		/**
-		 * clean a grab product settings
-		 */
-		$products             = isset( $_POST['hog_products'] ) ? wp_unslash( $_POST['hog_products'] ) : '';
-		$products             = array_filter( array_map( 'wc_clean', (array) $products ) );
-		$settings['products'] = $products;
-
-		/**
-		 * Clean and grab locale settings
-		 */
-		$customer_locales             = isset( $_POST['hog_customer_locales'] ) ? wp_unslash( $_POST['hog_customer_locales'] ) : '';
-		$customer_locales             = array_filter( array_map( 'wc_clean', (array) $customer_locales ) );
-		$settings['customer_locales'] = $customer_locales;
 
 		/**
 		 * The maximum orders per hour can be reset by a filter, but defaults
@@ -332,6 +330,34 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 		 * Save the settings
 		 */
 		update_option( 'happy_order_generator_settings', $settings );
+	}
+
+	/**
+	 * A posted checkbox as 'yes' or 'no'. Unticked checkboxes aren't posted.
+	 * Only call after the nonce check in save().
+	 *
+	 * @param string $key The field ID.
+	 *
+	 * @return string
+	 */
+	private function posted_checkbox( string $key ): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified in save().
+		return isset( $_POST[ $key ] ) && '1' === sanitize_text_field( wp_unslash( $_POST[ $key ] ) ) ? 'yes' : 'no';
+	}
+
+	/**
+	 * A posted multiselect as a list of non-empty sanitized strings.
+	 * Only call after the nonce check in save().
+	 *
+	 * @param string $key The field ID.
+	 *
+	 * @return string[]
+	 */
+	private function posted_list( string $key ): array {
+		// Nonce verified in save(); each value is sanitized below.
+		$values = isset( $_POST[ $key ] ) ? (array) wp_unslash( $_POST[ $key ] ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		return array_filter( array_map( 'sanitize_text_field', array_filter( $values, 'is_scalar' ) ) );
 	}
 }
 

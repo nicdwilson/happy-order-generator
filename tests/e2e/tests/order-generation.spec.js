@@ -44,7 +44,6 @@ test.describe( 'Order generation', () => {
 	} );
 
 	test( 'generation raised no PHP notices, warnings or errors', async () => {
-		test.fail( true, 'Known bug: do_failure_check() reads payment_data["final_status"] without isset() (class-gateway-integration-stripe.php).' );
 		const issues = pluginPhpIssues( await readDebugLog() );
 		expect( issues, issues.join( '\n' ) ).toEqual( [] );
 	} );

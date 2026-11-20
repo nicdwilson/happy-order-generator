@@ -50,19 +50,14 @@ WordPress container. It is never shipped and never used under QIT.
 
 ### Known failures
 
-These tests are marked `test.fail()`. Playwright counts them as passing while
-they fail, and flags them as soon as the bug is fixed, which means the marker
-should be removed:
-
-| Test | Bug |
-|---|---|
-| Activation › a guest can check out while the plugin is active | `Gateway_Integration_Stripe::do_failure_check()` hooks every Store API checkout and sets real shoppers' orders to `pending` (HTTP 202) |
-| Activation › raised no PHP notices… / Order generation › …no PHP notices… | Same function reads `payment_data['final_status']` without `isset()` |
-| Enable/Disable toggle › saving settings raised no PHP notices… | `save()` reads `$_POST['hog_debug']` / `hog_create_users` without `isset()` |
+There are none at the moment. When a test exposes a bug that isn't fixed
+yet, mark it with `test.fail( true, 'Known bug: …' )` and list it here.
+Playwright counts a marked test as passing while it fails, and reports it
+as soon as the bug is fixed, so the marker can be removed.
 
 Unverified: CTRF's summary counts expected failures under `failed`, even
-though each test's status is `passed`. If QIT reads the summary, those runs
-would show as failed until the bugs are fixed.
+though each test's status is `passed`. If QIT reads the summary, runs with
+marked tests would show as failed.
 
 ### Running under QIT (once registered)
 
@@ -76,5 +71,5 @@ qit package:publish ./tests/e2e
 - Validation: **warning**: missing `Requires PHP` and `Requires at least` headers, no readme.txt.
 - Code Compatibility: pass.
 - PHPStan: pass against `tests/qit/phpstan-baseline.neon` (40 existing errors, mostly unchecked `WP_User|false`, plus the Logger `WP_Error` method bug). New errors fail.
-- Security: **28 errors**, mostly missing nonce checks and unslashed/unsanitised input in the settings `save()`, plus `log_customer_in()` reading `$_POST`. The CI job is non-blocking until these are fixed.
+- Security: pass (0 errors). The CI job blocks merges.
 - Audit: pass.
