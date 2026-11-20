@@ -138,14 +138,33 @@ class Gateway_Integration_Stripe {
 	 * This allows us to bypass Stripe's usual processing and
 	 * add our own order notes.
 	 *
-	 * @param $context
-	 * @param $payment_result
+	 * This runs on every Store API checkout, so it only acts on Stripe
+	 * checkouts sent by the generator. Those always carry a final_status
+	 * entry in their payment data (see Order_Builder::do_checkout()); real
+	 * shoppers' checkouts never do, and are left alone.
+	 *
+	 * @param \Automattic\WooCommerce\StoreApi\Payments\PaymentContext $context
+	 * @param \Automattic\WooCommerce\StoreApi\Payments\PaymentResult  $payment_result
 	 *
 	 * @return void
 	 */
 	public function do_failure_check( $context, $payment_result ): void {
 
-		if ( $context->payment_data['final_status'] !== 'paid' ) {
+		// PaymentContext exposes these through __get() without __isset(), so
+		// read them directly: ?? / isset() would always see them as unset.
+		// @phpstan-ignore property.protected (public read through PaymentContext::__get())
+		if ( 'stripe' !== $context->payment_method ) {
+			return;
+		}
+
+		// @phpstan-ignore property.protected (public read through PaymentContext::__get())
+		$payment_data = (array) $context->payment_data;
+
+		if ( ! array_key_exists( 'final_status', $payment_data ) ) {
+			return;
+		}
+
+		if ( 'paid' !== $payment_data['final_status'] ) {
 			$payment_result->set_status( 'pending' );
 		}
 	}

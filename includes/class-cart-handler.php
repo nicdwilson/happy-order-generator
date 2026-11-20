@@ -70,8 +70,21 @@ class Cart_Handler {
 				$this->add_products_to_cart( $separated_items['regular_products'] );
 			}
 			
-			// Return final cart state
-			return $this->get_cart_state();
+			$cart_state = $this->get_cart_state();
+
+			/**
+			 * The add-item and batch endpoints report failures in the response
+			 * body rather than by throwing, so check the cart really has items
+			 * before anything goes on to checkout.
+			 */
+			if ( false !== $cart_state && empty( $cart_state['items'] ) ) {
+				Logger::error( 'Cart is empty after adding items', [
+					'cart_items' => $cart_items
+				] );
+				return false;
+			}
+
+			return $cart_state;
 			
 		} catch ( \Exception $e ) {
 			Logger::log_exception( 'Error adding items to cart', $e, [
@@ -150,14 +163,19 @@ class Cart_Handler {
 	/**
 	 * Add a bundle product to cart using single request
 	 * 
-	 * Bundles MUST use single requests because:
-	 * 1. Bundle configuration data is complex and contains nested arrays/objects
-	 * 2. The WooCommerce Store API batch endpoint processes requests through WordPress core's 
-	 *    WP_REST_Server::serve_batch_request_v1() which converts JSON body to POST parameters
-	 * 3. This conversion causes bundle_configuration to be lost or malformed when sent via batch
-	 * 4. Single requests preserve the JSON structure exactly as needed by the bundles plugin
-	 * 5. The bundles plugin expects bundle_configuration at the top level of the request body
-	 * 
+	 * Bundles must use single requests, not /batch (checked November 2026 against
+	 * WordPress 7.1 and Product Bundles 8.5):
+	 * - WP_REST_Server::serve_batch_request_v1() passes each sub-request's body
+	 *   with set_body_params(). The nested bundle_configuration arrives intact
+	 *   there, but the sub-request has no raw JSON body.
+	 * - Product Bundles reads the configuration with get_json_params() only
+	 *   (WC_PB_Cart::handle_store_api_add_to_cart_request()), so inside a batch
+	 *   it never sees it. The bundle is then added with its default
+	 *   configuration and a 201, even when the submitted configuration is
+	 *   invalid.
+	 * If Product Bundles reads get_param( 'bundle_configuration' ) instead, bundles
+	 * can go back into the batch with everything else.
+	 *
 	 * @param array $bundle_item Bundle item data
 	 * @return array Response from the request
 	 * @throws \Exception On request failure
@@ -206,9 +224,14 @@ class Cart_Handler {
 			}
 			
 			$requests[] = [
-				'path' => '/cart/add-item',
+				// Batch sub-requests need the full route, not one relative to the Store API base.
+				'path' => '/wc/store/v1/cart/add-item',
 				'method' => 'POST',
-				'body' => $request_body
+				'body' => $request_body,
+				// Each sub-request is checked for its own nonce.
+				'headers' => [
+					'Nonce' => (string) $this->http_client->get_nonce(),
+				],
 			];
 		}
 		

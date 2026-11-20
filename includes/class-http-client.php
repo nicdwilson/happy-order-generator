@@ -37,6 +37,14 @@ class HTTP_Client {
 	private array $cookies = [];
 
 	/**
+	 * Store API cart token from the last response that sent one. It
+	 * identifies the cart session even when cookies don't carry over.
+	 *
+	 * @var string
+	 */
+	private string $cart_token = '';
+
+	/**
 	 * @var int
 	 */
 	private int $max_retries = 3;
@@ -100,16 +108,18 @@ class HTTP_Client {
 	 * @param string $endpoint API endpoint (without base URL)
 	 * @param array $data Request data
 	 * @param array $headers Additional headers
+	 * @param bool $retry Whether to retry on failure. Pass false for requests
+	 *                    that aren't safe to repeat, such as checkout.
 	 * @return array Response data
 	 * @throws \Exception On request failure
 	 */
-	public function post( string $endpoint, array $data = [], array $headers = [] ): array {
+	public function post( string $endpoint, array $data = [], array $headers = [], bool $retry = true ): array {
 		$url = $this->base_url . $endpoint;
 		$args = $this->build_request_args( 'POST', $headers, $data );
 
 		Logger::log_api_request( $endpoint, 'POST', $data, [] );
 
-		return $this->make_request( $url, $args, 'POST' );
+		return $this->make_request( $url, $args, 'POST', $retry ? $this->max_retries : 1 );
 	}
 
 	/**
@@ -153,9 +163,13 @@ class HTTP_Client {
 			$args['headers']['Nonce'] = $this->nonce;
 		}
 
+		if ( '' !== $this->cart_token ) {
+			$args['headers']['Cart-Token'] = $this->cart_token;
+		}
+
 		// Add cookies if available
 		if ( ! empty( $this->cookies ) ) {
-			$args['cookies'] = $this->cookies;
+			$args['cookies'] = array_values( $this->cookies );
 		}
 
 		// Add body for POST requests
@@ -172,14 +186,16 @@ class HTTP_Client {
 	 * @param string $url Full URL
 	 * @param array $args Request arguments
 	 * @param string $method HTTP method for logging
+	 * @param int|null $max_attempts Attempts to make, defaults to max_retries
 	 * @return array Response data
 	 * @throws \Exception On request failure
 	 */
-	private function make_request( string $url, array $args, string $method ): array {
+	private function make_request( string $url, array $args, string $method, ?int $max_attempts = null ): array {
 		$attempt = 0;
 		$last_error = null;
+		$max_attempts = $max_attempts ?? $this->max_retries;
 
-		while ( $attempt < $this->max_retries ) {
+		while ( $attempt < $max_attempts ) {
 			$attempt++;
 			
 			try {
@@ -187,8 +203,7 @@ class HTTP_Client {
 				$response_code = wp_remote_retrieve_response_code( $response );
 				$response_body = wp_remote_retrieve_body( $response );
 
-				// Store cookies from response
-				$this->cookies = wp_remote_retrieve_cookies( $response );
+				$this->remember_session( $response );
 
 				Logger::info( $method . ' request successful', [
 					'url' => $url,
@@ -224,11 +239,11 @@ class HTTP_Client {
 					'url' => $url,
 					'error' => $e->getMessage(),
 					'attempt' => $attempt,
-					'max_retries' => $this->max_retries
+					'max_attempts' => $max_attempts
 				] );
 
 				// If this is the last attempt, don't wait
-				if ( $attempt >= $this->max_retries ) {
+				if ( $attempt >= $max_attempts ) {
 					break;
 				}
 
@@ -241,12 +256,12 @@ class HTTP_Client {
 		// All retries failed
 		Logger::error( 'All retry attempts failed', [
 			'url' => $url,
-			'max_retries' => $this->max_retries,
+			'max_attempts' => $max_attempts,
 			'last_error' => $last_error ? $last_error->getMessage() : 'Unknown error'
 		] );
 
-		throw new \Exception( 'Request failed after ' . $this->max_retries . ' attempts. Last error: ' . 
-			( $last_error ? $last_error->getMessage() : 'Unknown error' ) );
+		throw new \Exception( esc_html( 'Request failed after ' . $max_attempts . ' attempt(s). Last error: ' .
+			( $last_error ? $last_error->getMessage() : 'Unknown error' ) ) );
 	}
 
 	/**
@@ -271,10 +286,31 @@ class HTTP_Client {
 			Logger::log_exception( 'WP_Error occurred during HTTP request', $response, [
 				'url' => $url
 			] );
-			throw new \Exception( 'WP_Error: ' . $response->get_error_message() );
+			throw new \Exception( esc_html( 'WP_Error: ' . $response->get_error_message() ) );
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Keeps the cart session from a response for the next request.
+	 *
+	 * Cookies are merged by name rather than replaced: responses that set
+	 * no cookies (GET /cart, for one) would otherwise drop the session, and
+	 * checkout would then see an empty cart.
+	 *
+	 * @param array $response Response from wp_safe_remote_request().
+	 * @return void
+	 */
+	private function remember_session( array $response ): void {
+		foreach ( wp_remote_retrieve_cookies( $response ) as $cookie ) {
+			$this->cookies[ $cookie->name ] = $cookie;
+		}
+
+		$cart_token = wp_remote_retrieve_header( $response, 'cart-token' );
+		if ( is_string( $cart_token ) && '' !== $cart_token ) {
+			$this->cart_token = $cart_token;
+		}
 	}
 
 	/**
@@ -283,7 +319,7 @@ class HTTP_Client {
 	 * @return array Cookies array
 	 */
 	public function get_cookies(): array {
-		return $this->cookies;
+		return array_values( $this->cookies );
 	}
 
 	/**
