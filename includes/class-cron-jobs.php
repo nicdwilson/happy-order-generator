@@ -55,11 +55,53 @@ class Cron_Jobs {
 		$this->setup_action_scheduler();
 
 		add_action( 'create_happy_orders', array( $this, 'create_orders') , 10, 1 );
+
+		/**
+		 * Re-sync the schedule as soon as the settings change, so switching
+		 * the generator off (or back on) takes effect immediately rather than
+		 * on the next request.
+		 */
+		add_action( 'add_option_happy_order_generator_settings', array( $this, 'on_settings_updated' ), 10, 0 );
+		add_action( 'update_option_happy_order_generator_settings', array( $this, 'on_settings_updated' ), 10, 0 );
+	}
+
+	/**
+	 * Reloads the settings and re-syncs the scheduled action after a save.
+	 *
+	 * @return void
+	 */
+	public function on_settings_updated(): void {
+
+		$this->settings = Order_Generator::get_settings();
+
+		$this->setup_action_scheduler();
 	}
 
 	public function setup_action_scheduler(): void {
 
-		if( empty( $this->settings ) ){
+		/**
+		 * When generation is switched off, remove any pending action and stop.
+		 * Only pending actions are checked: one that is already running can't
+		 * be cancelled, and create_orders() refuses to run while disabled.
+		 */
+		if ( ! Order_Generator::is_enabled() ) {
+			if ( $this->has_pending_action() ) {
+				as_unschedule_all_actions( $this->action_hook );
+				Logger::log( 'Order generation disabled: scheduled actions removed' );
+			}
+			return;
+		}
+
+		/**
+		 * Zero (or unset) orders per hour means "generate nothing". Without this
+		 * the interval falls back to its 60 second default and a rate of 0
+		 * would generate roughly 60 orders an hour.
+		 */
+		if ( $this->get_orders_per_hour() < 1 ) {
+			if ( $this->has_pending_action() ) {
+				as_unschedule_all_actions( $this->action_hook );
+				Logger::log( 'Orders per hour is 0: scheduled actions removed' );
+			}
 			return;
 		}
 
@@ -90,19 +132,36 @@ class Cron_Jobs {
 	}
 
 	/**
+	 * Whether a pending (not yet started) generation action exists.
+	 *
+	 * @return bool
+	 */
+	private function has_pending_action(): bool {
+
+		$pending = as_get_scheduled_actions(
+			array(
+				'hook'     => $this->action_hook,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => 1,
+			),
+			'ids'
+		);
+
+		return ! empty( $pending );
+	}
+
+	/**
 	 * Get the schedule interval
 	 *
 	 * @return int
 	 */
 	private function get_interval_in_seconds(): int {
 
-		$interval = 60;
+		$interval        = 60;
+		$orders_per_hour = $this->get_orders_per_hour();
 
-		if( !empty( $this->settings['orders_per_hour'] ) && $this->settings['orders_per_hour'] > 0 ){
-
-			if ( $this->settings['orders_per_hour'] < 60 ) {
-				$interval = 3600 / $this->settings['orders_per_hour'];
-			}
+		if ( $orders_per_hour > 0 && $orders_per_hour < 60 ) {
+			$interval = (int) round( 3600 / $orders_per_hour );
 		}
 
 		return $interval;
@@ -115,13 +174,25 @@ class Cron_Jobs {
 	 */
 	private function get_batch_size(): int {
 
-		$batch_size = 1;
+		$batch_size      = 1;
+		$orders_per_hour = $this->get_orders_per_hour();
 
-		if ( $this->settings['orders_per_hour'] > 60 ) {
-			$batch_size = round( $this->settings['orders_per_hour'] / 60 );
+		if ( $orders_per_hour > 60 ) {
+			$batch_size = (int) round( $orders_per_hour / 60 );
 		}
 
 		return $batch_size;
+	}
+
+	/**
+	 * The configured orders per hour, as a non-negative integer. Negative
+	 * values count as 0 (absint() would turn -5 into 5 orders an hour).
+	 *
+	 * @return int
+	 */
+	private function get_orders_per_hour(): int {
+
+		return max( 0, (int) ( $this->settings['orders_per_hour'] ?? 0 ) );
 	}
 
 	/**
@@ -133,6 +204,25 @@ class Cron_Jobs {
 	 * @throws \WC_Stripe_Exception
 	 */
 	public function create_orders( $args = 1 ): void {
+
+		/**
+		 * An action may already be claimed by a queue runner when generation
+		 * is switched off, so check again before creating anything.
+		 */
+		if ( ! Order_Generator::is_enabled() ) {
+			Logger::log( 'Order generation is disabled: skipping scheduled batch' );
+			return;
+		}
+
+		/**
+		 * Likewise if orders per hour was set to 0 after this action was queued.
+		 */
+		$this->settings = Order_Generator::get_settings();
+
+		if ( $this->get_orders_per_hour() < 1 ) {
+			Logger::log( 'Orders per hour is 0: skipping scheduled batch' );
+			return;
+		}
 
 		Logger::log( PHP_EOL . 'Generating batch of ' . $args . ' orders' );
 

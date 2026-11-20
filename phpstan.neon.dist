@@ -1,0 +1,18 @@
+# Mirrors QIT's PHPStan test (default level 2 in the QIT CLI).
+# https://qit.woo.com/docs/managed-tests/phpstan/
+includes:
+	- vendor/szepeviktor/phpstan-wordpress/extension.neon
+	# Existing findings, to be fixed down to zero. New errors still fail.
+	- tests/qit/phpstan-baseline.neon
+
+parameters:
+	level: 2
+	paths:
+		- woocommerce-order-generator.php
+		- includes
+	scanFiles:
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-packages-stubs.php
+		- tests/qit/stubs/optional-integrations.php
+	bootstrapFiles:
+		- tests/qit/phpstan-bootstrap.php

@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+	Mirrors the PHPCS part of QIT's Security test:
+	WordPress Coding Standards, limited to the WordPress.Security and WordPress.DB sniffs.
+	https://qit.woo.com/docs/managed-tests/security/
+-->
+<ruleset name="HOG QIT Security">
+	<description>QIT-equivalent security sniffs for Happy Order Generator.</description>
+
+	<file>../../woocommerce-order-generator.php</file>
+	<file>../../includes</file>
+
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+	<arg name="colors"/>
+
+	<rule ref="WordPress.Security"/>
+	<rule ref="WordPress.DB"/>
+
+	<!-- WordPress.Security.EscapeOutput needs to know the plugin's text domain-agnostic escaping helpers only. -->
+	<config name="minimum_wp_version" value="6.2"/>
+</ruleset>

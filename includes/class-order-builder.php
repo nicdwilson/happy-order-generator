@@ -190,9 +190,16 @@ class Order_Builder {
 			);
 		}
 
+		/**
+		 * Proves to Order_Generator::log_customer_in() that this checkout
+		 * comes from the generator, for this customer only.
+		 */
+		$checkout_token = Order_Generator::issue_checkout_token( (int) $options['user_id'] );
+
 		$args = array(
 			'headers' => array(
-				'nonce' => $this->nonce
+				'nonce'                                => $this->nonce,
+				Order_Generator::CHECKOUT_TOKEN_HEADER => $checkout_token,
 			),
 			'cookies' => $this->cookies,
 			'body'    => $body,
@@ -200,6 +207,8 @@ class Order_Builder {
 		);
 
 		$response_body = $this->get_post_response( $url, $args );
+
+		Order_Generator::revoke_checkout_token( $checkout_token );
 
 		$response_object = json_decode( $response_body );
 

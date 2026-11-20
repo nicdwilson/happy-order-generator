@@ -54,5 +54,7 @@ namespace Happy_Order_Generator;
           * happy_order_generator_settings and scheduler state in hog_scheduler_state.
           */
          delete_option( 'wc_order_generator_settings' );
+
+		Customer::ensure_role();
     }
 }
