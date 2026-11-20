@@ -44,7 +44,7 @@ class Logger {
 
 		// Handle WP_Error objects
 		if( is_wp_error( $message )){
-			self::$logger->debug( $message->get_code(), array( 'source' => self::LOG_NAME ) );
+			self::$logger->debug( $message->get_error_code(), array( 'source' => self::LOG_NAME ) );
 			self::$logger->error( implode( ', ', $message->get_error_messages() ), array( 'source' => self::LOG_NAME ) );
 			return;
 		}

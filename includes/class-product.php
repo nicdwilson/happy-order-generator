@@ -312,7 +312,7 @@ class Product {
 	/**
 	 * Generates a valid bundle configuration for a bundle product
 	 *
-	 * @param WC_Product_Bundle $bundle The bundle product
+	 * @param \WC_Product_Bundle $bundle The bundle product
 	 * @return array Bundle configuration array
 	 */
 	private function generate_bundle_configuration( $bundle ): array {
@@ -330,7 +330,7 @@ class Product {
 
 		foreach ( $bundled_items as $bundled_item_id => $bundled_item ) {
 
-			$include_item = $include_item = rand( 0, 1 );
+			$include_item = rand( 0, 1 );
 			
 			if (  $bundled_item->is_optional() && $include_item === 0 ) {
 				continue;
@@ -339,7 +339,9 @@ class Product {
 
 			
 			$item_config = array();
-			$item_config['bundled_item_id'] = $bundled_item->get_product_id();
+			// The bundled item's own ID (the key of get_bundled_items()), not the ID
+			// of the product it bundles: Product Bundles rejects anything else.
+			$item_config['bundled_item_id'] = $bundled_item_id;
 
 			// Handle optional items - randomly include them
 			if ( $bundled_item->is_optional() && $include_item === 1 ) {
