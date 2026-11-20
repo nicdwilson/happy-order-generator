@@ -37,6 +37,14 @@ class HTTP_Client {
 	private array $cookies = [];
 
 	/**
+	 * Store API cart token from the last response that sent one. It
+	 * identifies the cart session even when cookies don't carry over.
+	 *
+	 * @var string
+	 */
+	private string $cart_token = '';
+
+	/**
 	 * @var int
 	 */
 	private int $max_retries = 3;
@@ -155,9 +163,13 @@ class HTTP_Client {
 			$args['headers']['Nonce'] = $this->nonce;
 		}
 
+		if ( '' !== $this->cart_token ) {
+			$args['headers']['Cart-Token'] = $this->cart_token;
+		}
+
 		// Add cookies if available
 		if ( ! empty( $this->cookies ) ) {
-			$args['cookies'] = $this->cookies;
+			$args['cookies'] = array_values( $this->cookies );
 		}
 
 		// Add body for POST requests
@@ -191,8 +203,7 @@ class HTTP_Client {
 				$response_code = wp_remote_retrieve_response_code( $response );
 				$response_body = wp_remote_retrieve_body( $response );
 
-				// Store cookies from response
-				$this->cookies = wp_remote_retrieve_cookies( $response );
+				$this->remember_session( $response );
 
 				Logger::info( $method . ' request successful', [
 					'url' => $url,
@@ -249,8 +260,8 @@ class HTTP_Client {
 			'last_error' => $last_error ? $last_error->getMessage() : 'Unknown error'
 		] );
 
-		throw new \Exception( 'Request failed after ' . $max_attempts . ' attempt(s). Last error: ' . 
-			( $last_error ? $last_error->getMessage() : 'Unknown error' ) );
+		throw new \Exception( esc_html( 'Request failed after ' . $max_attempts . ' attempt(s). Last error: ' .
+			( $last_error ? $last_error->getMessage() : 'Unknown error' ) ) );
 	}
 
 	/**
@@ -275,10 +286,31 @@ class HTTP_Client {
 			Logger::log_exception( 'WP_Error occurred during HTTP request', $response, [
 				'url' => $url
 			] );
-			throw new \Exception( 'WP_Error: ' . $response->get_error_message() );
+			throw new \Exception( esc_html( 'WP_Error: ' . $response->get_error_message() ) );
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Keeps the cart session from a response for the next request.
+	 *
+	 * Cookies are merged by name rather than replaced: responses that set
+	 * no cookies (GET /cart, for one) would otherwise drop the session, and
+	 * checkout would then see an empty cart.
+	 *
+	 * @param array $response Response from wp_safe_remote_request().
+	 * @return void
+	 */
+	private function remember_session( array $response ): void {
+		foreach ( wp_remote_retrieve_cookies( $response ) as $cookie ) {
+			$this->cookies[ $cookie->name ] = $cookie;
+		}
+
+		$cart_token = wp_remote_retrieve_header( $response, 'cart-token' );
+		if ( is_string( $cart_token ) && '' !== $cart_token ) {
+			$this->cart_token = $cart_token;
+		}
 	}
 
 	/**
@@ -287,7 +319,7 @@ class HTTP_Client {
 	 * @return array Cookies array
 	 */
 	public function get_cookies(): array {
-		return $this->cookies;
+		return array_values( $this->cookies );
 	}
 
 	/**
