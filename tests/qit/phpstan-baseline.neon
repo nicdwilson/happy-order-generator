@@ -1,0 +1,145 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Call to an undefined method Faker\\Generator\:\:username\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: ../../includes/class-customer.php
+
+		-
+			message: '#^PHPDoc tag @var for property Happy_Order_Generator\\Customer\:\:\$instance with type object\|null is not subtype of native type object\.$#'
+			identifier: property.phpDocType
+			count: 1
+			path: ../../includes/class-customer.php
+
+		-
+			message: '#^Access to an undefined property WooCommerce\:\:\$payment_gateways\.$#'
+			identifier: property.notFound
+			count: 1
+			path: ../../includes/class-gateway-integration-stripe.php
+
+		-
+			message: '#^Cannot access property \$default_source on bool\|object\.$#'
+			identifier: property.nonObject
+			count: 2
+			path: ../../includes/class-gateway-integration-stripe.php
+
+		-
+			message: '#^Cannot access property \$id on bool\|object\.$#'
+			identifier: property.nonObject
+			count: 11
+			path: ../../includes/class-gateway-integration-stripe.php
+
+		-
+			message: '#^Cannot access property \$id on object\|true\.$#'
+			identifier: property.nonObject
+			count: 4
+			path: ../../includes/class-gateway-integration-stripe.php
+
+		-
+			message: '#^Cannot access property \$sources on bool\|object\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-gateway-integration-stripe.php
+
+		-
+			message: '#^PHPDoc tag @var for property Happy_Order_Generator\\Generator\:\:\$settings with type mixed is not subtype of native type array\.$#'
+			identifier: property.phpDocType
+			count: 1
+			path: ../../includes/class-generator.php
+
+		-
+			message: '#^Call to an undefined method WP_Error\:\:get_code\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: ../../includes/class-logger.php
+
+		-
+			message: '#^Cannot access property \$billing_address_1 on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$billing_city on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$billing_country on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$billing_email on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 2
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$billing_phone on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$billing_postcode on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$billing_state on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$shipping_address_1 on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$shipping_city on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$shipping_country on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$shipping_postcode on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Cannot access property \$shipping_state on WP_User\|false\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: ../../includes/class-order-builder.php
+
+		-
+			message: '#^Action callback returns Happy_Order_Generator\\Cron_Jobs but should not return anything\.$#'
+			identifier: return.void
+			count: 1
+			path: ../../woocommerce-order-generator.php
+
+		-
+			message: '#^Action callback returns Happy_Order_Generator\\Gateway_Integration_Stripe but should not return anything\.$#'
+			identifier: return.void
+			count: 1
+			path: ../../woocommerce-order-generator.php
+
+		-
+			message: '#^Action callback returns array but should not return anything\.$#'
+			identifier: return.void
+			count: 1
+			path: ../../woocommerce-order-generator.php

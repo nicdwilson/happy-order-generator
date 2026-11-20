@@ -28,7 +28,7 @@ class Logger {
 
 		$settings = Order_Generator::get_settings();
 
-		if( ( $settings['enable_debug'] ?? 'no' ) !== 'yes' ){
+		if ( 'yes' !== ( $settings['enable_debug'] ?? 'no' ) ) {
 			return;
 		}
 

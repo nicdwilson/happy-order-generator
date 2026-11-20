@@ -103,6 +103,12 @@ class Order_Generator {
 		add_action( 'action_scheduler_init', array( 'Happy_Order_Generator\Cron_Jobs', 'instance' ) );
 
 		/**
+		 * Remind store staff that orders are being generated
+		 */
+		add_action( 'admin_notices', array( $this, 'running_notice' ) );
+		add_action( 'wp_ajax_hog_dismiss_running_notice', array( $this, 'dismiss_running_notice' ) );
+
+		/**
 		 * Fire up the Stripe Gateway integration
 		 */
 		add_action( 'plugins_loaded', array( 'Happy_Order_Generator\Gateway_Integration_Stripe', 'instance' ) );
@@ -121,30 +127,86 @@ class Order_Generator {
 	}
 
 	/**
-	 * Log the user in before process_customer runs during checkout in store-api
+	 * Header the generator sends with its own Store API checkout requests.
+	 */
+	const CHECKOUT_TOKEN_HEADER = 'X-HOG-Checkout-Token';
+
+	/**
+	 * Issues a single-use token that lets one generator checkout log in as
+	 * the given generated customer. Only a hash of the token is stored.
 	 *
-	 * @param $customer
-	 * @param $request
+	 * @param int $user_id The customer the checkout is for.
+	 *
+	 * @return string The token to send in the CHECKOUT_TOKEN_HEADER header.
+	 */
+	public static function issue_checkout_token( int $user_id ): string {
+
+		$token = bin2hex( random_bytes( 32 ) );
+
+		set_transient( self::checkout_token_key( $token ), $user_id, 2 * MINUTE_IN_SECONDS );
+
+		return $token;
+	}
+
+	/**
+	 * Removes a checkout token, whether or not it was used.
+	 *
+	 * @param string $token The token returned by issue_checkout_token().
+	 *
+	 * @return void
+	 */
+	public static function revoke_checkout_token( string $token ): void {
+		delete_transient( self::checkout_token_key( $token ) );
+	}
+
+	/**
+	 * The transient key for a checkout token.
+	 *
+	 * @param string $token The token.
+	 *
+	 * @return string
+	 */
+	private static function checkout_token_key( string $token ): string {
+		return 'hog_checkout_' . hash( 'sha256', $token );
+	}
+
+	/**
+	 * Log the generated customer in before process_customer runs during a
+	 * Store API checkout.
+	 *
+	 * This runs on every Store API checkout, so it only acts on requests
+	 * that carry a valid single-use token from issue_checkout_token(), and
+	 * only logs in the generated customer that token was issued for.
+	 *
+	 * @param \WC_Customer    $customer The customer being updated.
+	 * @param \WP_REST_Request $request  The checkout request.
 	 *
 	 * @return void
 	 */
 	public function log_customer_in( $customer, $request ): void {
 
-		/**
-		 * Store API checkout requests carry a JSON body, so $_POST is empty.
-		 * Read the email from the request object provided by the hook.
-		 */
-		$billing_address = $request['billing_address'] ?? array();
-
-		if ( empty( $billing_address['email'] ) ) {
+		if ( ! self::is_allowed_environment() ) {
 			return;
 		}
 
-		$user = get_user_by( 'email', sanitize_email( $billing_address['email'] ) );
+		$token = (string) $request->get_header( self::CHECKOUT_TOKEN_HEADER );
 
-		if ( $user ) {
-			wc_set_customer_auth_cookie( $user->ID );
+		if ( '' === $token || ! preg_match( '/^[0-9a-f]{64}$/', $token ) ) {
+			return;
 		}
+
+		$key     = self::checkout_token_key( $token );
+		$user_id = (int) get_transient( $key );
+
+		// Single use: remove it before doing anything else.
+		delete_transient( $key );
+
+		// Never log in anyone the generator didn't create, or anyone who can manage the store.
+		if ( ! Customer::is_generated( $user_id ) || user_can( $user_id, 'manage_woocommerce' ) ) {
+			return;
+		}
+
+		wc_set_customer_auth_cookie( $user_id );
 	}
 
 	/**
@@ -157,6 +219,56 @@ class Order_Generator {
 		$settings = get_option( 'happy_order_generator_settings', array() );
 
 		return ( is_array( $settings ) ) ? $settings : array();
+	}
+
+	/**
+	 * Whether order generation is switched on.
+	 *
+	 * This is separate from the plugin being active: it lets order generation
+	 * be paused from the settings page without deactivating the plugin or
+	 * losing the configuration. Sites that saved settings before this option
+	 * existed have no 'enabled' key, so a missing value counts as enabled to
+	 * keep their current behaviour.
+	 *
+	 * @return bool
+	 */
+	public static function is_enabled(): bool {
+
+		$settings = self::get_settings();
+		$enabled  = 'no' !== ( $settings['enabled'] ?? 'yes' );
+
+		/**
+		 * Filters whether Happy Order Generator should generate orders.
+		 *
+		 * @param bool  $enabled  Whether order generation is enabled.
+		 * @param array $settings The plugin settings.
+		 */
+		$enabled = (bool) apply_filters( 'hog_is_enabled', $enabled, $settings );
+
+		// Checked last so the filter above can't switch generation on in production.
+		return $enabled && self::is_allowed_environment();
+	}
+
+	/**
+	 * Whether this site's environment type allows order generation.
+	 *
+	 * The generator creates real orders and customers, so it only runs on
+	 * sites whose WP_ENVIRONMENT_TYPE is local, development or staging. Sites
+	 * that don't set it count as production, as wp_get_environment_type()
+	 * reports.
+	 *
+	 * @return bool
+	 */
+	public static function is_allowed_environment(): bool {
+
+		/**
+		 * Filters the environment types the order generator may run in.
+		 *
+		 * @param string[] $types Allowed values of wp_get_environment_type().
+		 */
+		$types = (array) apply_filters( 'hog_allowed_environment_types', array( 'local', 'development', 'staging' ) );
+
+		return in_array( wp_get_environment_type(), $types, true );
 	}
 
 	/**
@@ -226,6 +338,98 @@ class Order_Generator {
 		echo '<div class="notice notice-error"><p>';
 		echo wp_kses_post( implode( '<br>', self::$errors ) );
 		echo '</p></div>';
+	}
+
+	/**
+	 * User meta holding a hash of the login session the running notice was
+	 * dismissed in. A new login has a new session, so the notice returns.
+	 */
+	const NOTICE_DISMISSED_META_KEY = '_hog_running_notice_dismissed';
+
+	/**
+	 * Warns administrators and shop managers, on every admin screen, that
+	 * orders are being generated. It can be dismissed until the next login.
+	 *
+	 * @return void
+	 */
+	public function running_notice(): void {
+
+		if ( ! current_user_can( 'manage_woocommerce' ) || ! self::is_enabled() ) {
+			return;
+		}
+
+		// Only claim it's running when a generation action is actually queued.
+		if ( ! function_exists( 'as_has_scheduled_action' ) || ! as_has_scheduled_action( 'create_happy_orders' ) ) {
+			return;
+		}
+
+		$session = wp_get_session_token();
+		$stored  = (string) get_user_meta( get_current_user_id(), self::NOTICE_DISMISSED_META_KEY, true );
+
+		if ( '' !== $session && '' !== $stored && hash_equals( $stored, hash( 'sha256', $session ) ) ) {
+			return;
+		}
+
+		$settings = self::get_settings();
+		$rate     = (int) ( $settings['orders_per_hour'] ?? 0 );
+
+		if ( $rate >= 1 ) {
+			$message = sprintf(
+				/* translators: %s: number of orders per hour */
+				_n(
+					'Happy Order Generator is creating test orders on this site at %s order an hour.',
+					'Happy Order Generator is creating test orders on this site at %s orders an hour.',
+					$rate,
+					'happy-order-generator'
+				),
+				number_format_i18n( $rate )
+			);
+		} else {
+			$message = __( 'Happy Order Generator is creating test orders on this site.', 'happy-order-generator' );
+		}
+
+		$settings_url = admin_url( 'admin.php?page=wc-settings&tab=order_generator' );
+		$nonce        = wp_create_nonce( 'hog_dismiss_running_notice' );
+		?>
+		<div class="notice notice-warning is-dismissible hog-running-notice" data-nonce="<?php echo esc_attr( $nonce ); ?>">
+			<p>
+				<strong><?php echo esc_html( $message ); ?></strong>
+				<a href="<?php echo esc_url( $settings_url ); ?>"><?php esc_html_e( 'Change or pause it in the settings', 'happy-order-generator' ); ?></a>
+			</p>
+		</div>
+		<script>
+			jQuery( function ( $ ) {
+				$( document ).on( 'click', '.hog-running-notice .notice-dismiss', function () {
+					$.post( ajaxurl, {
+						action: 'hog_dismiss_running_notice',
+						_ajax_nonce: $( this ).closest( '.hog-running-notice' ).data( 'nonce' )
+					} );
+				} );
+			} );
+		</script>
+		<?php
+	}
+
+	/**
+	 * Remembers that the running notice was dismissed in this login session.
+	 *
+	 * @return void
+	 */
+	public function dismiss_running_notice(): void {
+
+		check_ajax_referer( 'hog_dismiss_running_notice' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( null, 403 );
+		}
+
+		$session = wp_get_session_token();
+
+		if ( '' !== $session ) {
+			update_user_meta( get_current_user_id(), self::NOTICE_DISMISSED_META_KEY, hash( 'sha256', $session ) );
+		}
+
+		wp_send_json_success();
 	}
 
 	/**
