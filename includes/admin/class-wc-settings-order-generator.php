@@ -54,6 +54,8 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 		$message = '';
 		if ( ! Order_Generator::is_enabled() ) {
 			$message = '<strong>' . esc_html__( 'Order generation is paused. No orders will be created until it is enabled again.', 'happy-order-generator' ) . '</strong>';
+		} elseif ( (int) ( $settings['orders_per_hour'] ?? 0 ) < 1 ) {
+			$message = '<strong>' . esc_html__( 'Orders per Hour is 0, so no orders will be created. Set it to 1 or more to start generating.', 'happy-order-generator' ) . '</strong>';
 		}
 
 		$country_ids = ( isset( $settings['customer_locales'] ) ) ? maybe_unserialize( $settings['customer_locales'] ) : array();
@@ -80,6 +82,9 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'value'    => ( isset( $settings['orders_per_hour'] ) ) ? $settings['orders_per_hour'] : '',
 				'type'     => 'number',
 				'desc_tip' => true,
+				'custom_attributes' => array(
+					'min' => 0,
+				),
 			),
 			array(
 				'title'             => __( 'Products', 'happy-order-generator' ),
@@ -251,7 +256,7 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 
 		$settings = array(
 			'enabled'                    => isset( $_POST['hog_enabled'] ) && '1' === (string) $_POST['hog_enabled'] ? 'yes' : 'no',
-			'orders_per_hour'            => absint( $_POST['hog_orders_per_hour'] ?? 0 ),
+			'orders_per_hour'            => max( 0, (int) ( $_POST['hog_orders_per_hour'] ?? 0 ) ),
 			'min_order_products'         => absint( $_POST['hog_min_order_products'] ?? 1 ),
 			'max_order_products'         => absint( $_POST['hog_max_order_products'] ?? 1 ),
 			'create_users'               => (bool) $_POST['hog_create_users'],

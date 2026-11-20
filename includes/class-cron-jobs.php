@@ -92,7 +92,16 @@ class Cron_Jobs {
 			return;
 		}
 
-		if( empty( $this->settings ) ){
+		/**
+		 * Zero (or unset) orders per hour means "generate nothing". Without this
+		 * the interval falls back to its 60 second default and a rate of 0
+		 * would generate roughly 60 orders an hour.
+		 */
+		if ( $this->get_orders_per_hour() < 1 ) {
+			if ( $this->has_pending_action() ) {
+				as_unschedule_all_actions( $this->action_hook );
+				Logger::log( 'Orders per hour is 0: scheduled actions removed' );
+			}
 			return;
 		}
 
@@ -146,13 +155,11 @@ class Cron_Jobs {
 	 */
 	private function get_interval_in_seconds(): int {
 
-		$interval = 60;
+		$interval        = 60;
+		$orders_per_hour = $this->get_orders_per_hour();
 
-		if( !empty( $this->settings['orders_per_hour'] ) && $this->settings['orders_per_hour'] > 0 ){
-
-			if ( $this->settings['orders_per_hour'] < 60 ) {
-				$interval = 3600 / $this->settings['orders_per_hour'];
-			}
+		if ( $orders_per_hour > 0 && $orders_per_hour < 60 ) {
+			$interval = (int) round( 3600 / $orders_per_hour );
 		}
 
 		return $interval;
@@ -165,13 +172,25 @@ class Cron_Jobs {
 	 */
 	private function get_batch_size(): int {
 
-		$batch_size = 1;
+		$batch_size      = 1;
+		$orders_per_hour = $this->get_orders_per_hour();
 
-		if ( $this->settings['orders_per_hour'] > 60 ) {
-			$batch_size = round( $this->settings['orders_per_hour'] / 60 );
+		if ( $orders_per_hour > 60 ) {
+			$batch_size = (int) round( $orders_per_hour / 60 );
 		}
 
 		return $batch_size;
+	}
+
+	/**
+	 * The configured orders per hour, as a non-negative integer. Negative
+	 * values count as 0 (absint() would turn -5 into 5 orders an hour).
+	 *
+	 * @return int
+	 */
+	private function get_orders_per_hour(): int {
+
+		return max( 0, (int) ( $this->settings['orders_per_hour'] ?? 0 ) );
 	}
 
 	/**
@@ -190,6 +209,16 @@ class Cron_Jobs {
 		 */
 		if ( ! Order_Generator::is_enabled() ) {
 			Logger::log( 'Order generation is disabled: skipping scheduled batch' );
+			return;
+		}
+
+		/**
+		 * Likewise if orders per hour was set to 0 after this action was queued.
+		 */
+		$this->settings = Order_Generator::get_settings();
+
+		if ( $this->get_orders_per_hour() < 1 ) {
+			Logger::log( 'Orders per hour is 0: skipping scheduled batch' );
 			return;
 		}
 
