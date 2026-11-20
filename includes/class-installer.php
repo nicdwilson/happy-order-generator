@@ -47,5 +47,6 @@ namespace Happy_Order_Generator;
 	 }
 
      public static function activate_plugin():void{
+		Customer::ensure_role();
     }
 }

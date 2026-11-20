@@ -52,7 +52,13 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 		$data_selected = esc_attr( json_encode( $json_ids ) );
 
 		$message = '';
-		if ( ! Order_Generator::is_enabled() ) {
+		if ( ! Order_Generator::is_allowed_environment() ) {
+			$message = '<strong>' . sprintf(
+				/* translators: %s: the site's environment type, e.g. production */
+				esc_html__( 'Order generation is blocked because this site\'s environment type is "%s". It only runs on local, development or staging sites: set WP_ENVIRONMENT_TYPE in wp-config.php.', 'happy-order-generator' ),
+				esc_html( wp_get_environment_type() )
+			) . '</strong>';
+		} elseif ( ! Order_Generator::is_enabled() ) {
 			$message = '<strong>' . esc_html__( 'Order generation is paused. No orders will be created until it is enabled again.', 'happy-order-generator' ) . '</strong>';
 		} elseif ( (int) ( $settings['orders_per_hour'] ?? 0 ) < 1 ) {
 			$message = '<strong>' . esc_html__( 'Orders per Hour is 0, so no orders will be created. Set it to 1 or more to start generating.', 'happy-order-generator' ) . '</strong>';
