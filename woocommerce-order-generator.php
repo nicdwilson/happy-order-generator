@@ -179,6 +179,10 @@ class Order_Generator {
 	 */
 	public function log_customer_in( $customer, $request ): void {
 
+		if ( ! self::is_allowed_environment() ) {
+			return;
+		}
+
 		$token = (string) $request->get_header( self::CHECKOUT_TOKEN_HEADER );
 
 		if ( '' === $token || ! preg_match( '/^[0-9a-f]{64}$/', $token ) ) {
@@ -233,7 +237,32 @@ class Order_Generator {
 		 * @param bool  $enabled  Whether order generation is enabled.
 		 * @param array $settings The plugin settings.
 		 */
-		return (bool) apply_filters( 'hog_is_enabled', $enabled, $settings );
+		$enabled = (bool) apply_filters( 'hog_is_enabled', $enabled, $settings );
+
+		// Checked last so the filter above can't switch generation on in production.
+		return $enabled && self::is_allowed_environment();
+	}
+
+	/**
+	 * Whether this site's environment type allows order generation.
+	 *
+	 * The generator creates real orders and customers, so it only runs on
+	 * sites whose WP_ENVIRONMENT_TYPE is local, development or staging. Sites
+	 * that don't set it count as production, as wp_get_environment_type()
+	 * reports.
+	 *
+	 * @return bool
+	 */
+	public static function is_allowed_environment(): bool {
+
+		/**
+		 * Filters the environment types the order generator may run in.
+		 *
+		 * @param string[] $types Allowed values of wp_get_environment_type().
+		 */
+		$types = (array) apply_filters( 'hog_allowed_environment_types', array( 'local', 'development', 'staging' ) );
+
+		return in_array( wp_get_environment_type(), $types, true );
 	}
 
 	/**
