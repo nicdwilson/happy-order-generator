@@ -103,6 +103,12 @@ class Order_Generator {
 		add_action( 'action_scheduler_init', array( 'Happy_Order_Generator\Cron_Jobs', 'instance' ) );
 
 		/**
+		 * Remind store staff that orders are being generated
+		 */
+		add_action( 'admin_notices', array( $this, 'running_notice' ) );
+		add_action( 'wp_ajax_hog_dismiss_running_notice', array( $this, 'dismiss_running_notice' ) );
+
+		/**
 		 * Fire up the Stripe Gateway integration
 		 */
 		add_action( 'plugins_loaded', array( 'Happy_Order_Generator\Gateway_Integration_Stripe', 'instance' ) );
@@ -332,6 +338,98 @@ class Order_Generator {
 		echo '<div class="notice notice-error"><p>';
 		echo wp_kses_post( implode( '<br>', self::$errors ) );
 		echo '</p></div>';
+	}
+
+	/**
+	 * User meta holding a hash of the login session the running notice was
+	 * dismissed in. A new login has a new session, so the notice returns.
+	 */
+	const NOTICE_DISMISSED_META_KEY = '_hog_running_notice_dismissed';
+
+	/**
+	 * Warns administrators and shop managers, on every admin screen, that
+	 * orders are being generated. It can be dismissed until the next login.
+	 *
+	 * @return void
+	 */
+	public function running_notice(): void {
+
+		if ( ! current_user_can( 'manage_woocommerce' ) || ! self::is_enabled() ) {
+			return;
+		}
+
+		// Only claim it's running when a generation action is actually queued.
+		if ( ! function_exists( 'as_has_scheduled_action' ) || ! as_has_scheduled_action( 'create_happy_orders' ) ) {
+			return;
+		}
+
+		$session = wp_get_session_token();
+		$stored  = (string) get_user_meta( get_current_user_id(), self::NOTICE_DISMISSED_META_KEY, true );
+
+		if ( '' !== $session && '' !== $stored && hash_equals( $stored, hash( 'sha256', $session ) ) ) {
+			return;
+		}
+
+		$settings = self::get_settings();
+		$rate     = (int) ( $settings['orders_per_hour'] ?? 0 );
+
+		if ( $rate >= 1 ) {
+			$message = sprintf(
+				/* translators: %s: number of orders per hour */
+				_n(
+					'Happy Order Generator is creating test orders on this site at %s order an hour.',
+					'Happy Order Generator is creating test orders on this site at %s orders an hour.',
+					$rate,
+					'happy-order-generator'
+				),
+				number_format_i18n( $rate )
+			);
+		} else {
+			$message = __( 'Happy Order Generator is creating test orders on this site.', 'happy-order-generator' );
+		}
+
+		$settings_url = admin_url( 'admin.php?page=wc-settings&tab=order_generator' );
+		$nonce        = wp_create_nonce( 'hog_dismiss_running_notice' );
+		?>
+		<div class="notice notice-warning is-dismissible hog-running-notice" data-nonce="<?php echo esc_attr( $nonce ); ?>">
+			<p>
+				<strong><?php echo esc_html( $message ); ?></strong>
+				<a href="<?php echo esc_url( $settings_url ); ?>"><?php esc_html_e( 'Change or pause it in the settings', 'happy-order-generator' ); ?></a>
+			</p>
+		</div>
+		<script>
+			jQuery( function ( $ ) {
+				$( document ).on( 'click', '.hog-running-notice .notice-dismiss', function () {
+					$.post( ajaxurl, {
+						action: 'hog_dismiss_running_notice',
+						_ajax_nonce: $( this ).closest( '.hog-running-notice' ).data( 'nonce' )
+					} );
+				} );
+			} );
+		</script>
+		<?php
+	}
+
+	/**
+	 * Remembers that the running notice was dismissed in this login session.
+	 *
+	 * @return void
+	 */
+	public function dismiss_running_notice(): void {
+
+		check_ajax_referer( 'hog_dismiss_running_notice' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( null, 403 );
+		}
+
+		$session = wp_get_session_token();
+
+		if ( '' !== $session ) {
+			update_user_meta( get_current_user_id(), self::NOTICE_DISMISSED_META_KEY, hash( 'sha256', $session ) );
+		}
+
+		wp_send_json_success();
 	}
 
 	/**
