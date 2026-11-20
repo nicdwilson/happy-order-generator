@@ -51,7 +51,19 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 
 		$data_selected = esc_attr( json_encode( $json_ids ) );
 
-		$message     = 'todo';
+		$message = '';
+		if ( ! Order_Generator::is_allowed_environment() ) {
+			$message = '<strong>' . sprintf(
+				/* translators: %s: the site's environment type, e.g. production */
+				esc_html__( 'Order generation is blocked because this site\'s environment type is "%s". It only runs on local, development or staging sites: set WP_ENVIRONMENT_TYPE in wp-config.php.', 'happy-order-generator' ),
+				esc_html( wp_get_environment_type() )
+			) . '</strong>';
+		} elseif ( ! Order_Generator::is_enabled() ) {
+			$message = '<strong>' . esc_html__( 'Order generation is paused. No orders will be created until it is enabled again.', 'happy-order-generator' ) . '</strong>';
+		} elseif ( (int) ( $settings['orders_per_hour'] ?? 0 ) < 1 ) {
+			$message = '<strong>' . esc_html__( 'Orders per Hour is 0, so no orders will be created. Set it to 1 or more to start generating.', 'happy-order-generator' ) . '</strong>';
+		}
+
 		$country_ids = ( isset( $settings['customer_locales'] ) ) ? maybe_unserialize( $settings['customer_locales'] ) : array();
 
 		$settings_array = array(
@@ -62,6 +74,13 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'id'    => 'hog_settings_start'
 			),
 			array(
+				'title' => __( 'Enable/Disable', 'happy-order-generator' ),
+				'desc'  => __( 'Enable order generation', 'happy-order-generator' ),
+				'id'    => 'hog_enabled',
+				'type'  => 'checkbox',
+				'value' => ( $settings['enabled'] ?? 'yes' ) === 'no' ? 'no' : 'yes',
+			),
+			array(
 				'title'    => __( 'Orders per Hour', 'happy-order-generator' ),
 				'desc'     => __( 'The maximum number of orders to generate per hour.', 'happy-order-generator' ),
 				'id'       => 'hog_orders_per_hour',
@@ -69,6 +88,9 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'value'    => ( isset( $settings['orders_per_hour'] ) ) ? $settings['orders_per_hour'] : '',
 				'type'     => 'number',
 				'desc_tip' => true,
+				'custom_attributes' => array(
+					'min' => 0,
+				),
 			),
 			array(
 				'title'             => __( 'Products', 'happy-order-generator' ),
@@ -252,34 +274,34 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 	 */
 	public function save(): void {
 
+		/**
+		 * WC_Admin_Settings::save() checks both of these before it fires
+		 * woocommerce_settings_save_{tab}. Checking again here keeps this
+		 * method safe if it's ever called from somewhere else.
+		 */
+		check_admin_referer( 'woocommerce-settings' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
+		}
+
 		$settings = array(
-			'orders_per_hour'            => absint( $_POST['hog_orders_per_hour'] ?? 0 ),
+			'enabled'                    => $this->posted_checkbox( 'hog_enabled' ),
+			'orders_per_hour'            => max( 0, intval( $_POST['hog_orders_per_hour'] ?? 0 ) ),
 			'min_order_products'         => absint( $_POST['hog_min_order_products'] ?? 1 ),
 			'max_order_products'         => absint( $_POST['hog_max_order_products'] ?? 1 ),
-			'create_users'               => (bool) $_POST['hog_create_users'],
+			'create_users'               => ! empty( absint( $_POST['hog_create_users'] ?? 0 ) ),
 			'order_completed_pct'        => absint( $_POST['hog_order_completed_pct'] ?? 0 ),
 			'order_processing_pct'       => absint( $_POST['hog_order_processing_pct'] ?? 90 ),
 			'order_failed_pct'           => absint( $_POST['hog_order_failed_pct'] ?? 10 ),
-			'customer_naming_convention' => sanitize_text_field( $_POST['hog_customer_naming_convention'] ?? 'faker' ),
-			'customer_email_convention'  => sanitize_text_field( $_POST['hog_customer_email_convention'] ?? 'faker' ),
+			'customer_naming_convention' => sanitize_text_field( wp_unslash( $_POST['hog_customer_naming_convention'] ?? 'faker' ) ),
+			'customer_email_convention'  => sanitize_text_field( wp_unslash( $_POST['hog_customer_email_convention'] ?? 'faker' ) ),
 			'skip_ssl'                   => absint( $_POST['hog_skip_ssl'] ?? 0 ),
-			'order_attribution'          => ( ( $_POST['hog_order_attribution'] ?? 'no' ) === 'yes' ) ? 'yes' : 'no',
-			'enable_debug'               => ( $_POST['hog_debug'] == '1' ) ? 'yes' : 'no',
+			'order_attribution'          => 'yes' === sanitize_text_field( wp_unslash( $_POST['hog_order_attribution'] ?? 'no' ) ) ? 'yes' : 'no',
+			'enable_debug'               => $this->posted_checkbox( 'hog_debug' ),
+			'products'                   => $this->posted_list( 'hog_products' ),
+			'customer_locales'           => $this->posted_list( 'hog_customer_locales' ),
 		);
-
-		/**
-		 * clean a grab product settings
-		 */
-		$products             = isset( $_POST['hog_products'] ) ? wp_unslash( $_POST['hog_products'] ) : '';
-		$products             = array_filter( array_map( 'wc_clean', (array) $products ) );
-		$settings['products'] = $products;
-
-		/**
-		 * Clean and grab locale settings
-		 */
-		$customer_locales             = isset( $_POST['hog_customer_locales'] ) ? wp_unslash( $_POST['hog_customer_locales'] ) : '';
-		$customer_locales             = array_filter( array_map( 'wc_clean', (array) $customer_locales ) );
-		$settings['customer_locales'] = $customer_locales;
 
 		/**
 		 * The maximum orders per hour can be reset by a filter, but defaults
@@ -323,6 +345,34 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 		 * Save the settings
 		 */
 		update_option( 'happy_order_generator_settings', $settings );
+	}
+
+	/**
+	 * A posted checkbox as 'yes' or 'no'. Unticked checkboxes aren't posted.
+	 * Only call after the nonce check in save().
+	 *
+	 * @param string $key The field ID.
+	 *
+	 * @return string
+	 */
+	private function posted_checkbox( string $key ): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified in save().
+		return isset( $_POST[ $key ] ) && '1' === sanitize_text_field( wp_unslash( $_POST[ $key ] ) ) ? 'yes' : 'no';
+	}
+
+	/**
+	 * A posted multiselect as a list of non-empty sanitized strings.
+	 * Only call after the nonce check in save().
+	 *
+	 * @param string $key The field ID.
+	 *
+	 * @return string[]
+	 */
+	private function posted_list( string $key ): array {
+		// Nonce verified in save(); each value is sanitized below.
+		$values = isset( $_POST[ $key ] ) ? (array) wp_unslash( $_POST[ $key ] ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		return array_filter( array_map( 'sanitize_text_field', array_filter( $values, 'is_scalar' ) ) );
 	}
 }
 

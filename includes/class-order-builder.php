@@ -268,10 +268,25 @@ class Order_Builder {
 			);
 		}
 
+		/**
+		 * Proves to Order_Generator::log_customer_in() that this checkout
+		 * comes from the generator, for this customer only.
+		 */
+		$checkout_token = Order_Generator::issue_checkout_token( (int) $options['user_id'] );
+
 		try {
 			Logger::info( 'Creating order via checkout endpoint' );
-			
-			$response_data = $this->http_client->post( '/checkout', $body );
+
+			/**
+			 * Not retried: a checkout that fails part-way may already have
+			 * created an order, and the checkout token is single use.
+			 */
+			$response_data = $this->http_client->post(
+				'/checkout',
+				$body,
+				array( Order_Generator::CHECKOUT_TOKEN_HEADER => $checkout_token ),
+				false
+			);
 
 			Logger::log( 'Checkout response: ' . print_r( $response_data, true ) );
 			
@@ -335,6 +350,8 @@ class Order_Builder {
 				'payment_method' => $options['payment_method']
 			] );
 			$order = new WP_Error( 'checkout_exception', 'Checkout failed: ' . $e->getMessage() );
+		} finally {
+			Order_Generator::revoke_checkout_token( $checkout_token );
 		}
 
 		return $order;

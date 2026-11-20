@@ -89,6 +89,7 @@ Two small, self-contained feature requests that improve the generated data and i
 - **Fix:** when `Customer` creates a new user, write a `_happy_order_generator_user` (value `1`) user meta. Mirror the order-meta convention exactly so the two are symmetrical.
 - Wire it into the Phase 3 `uninstall.php` cleanup (delete generated users behind the same opt-in constant that gates generated-order deletion), and document the meta key alongside the existing `_happy_order_generator_order` tip in the `readme.txt` FAQ.
 - **Branch:** `feat/generated-user-meta` off `dev`.
+- **Superseded (November 2026):** `main` (#14) marks generated customers with `_happy_order_generator_customer` instead, plus a no-capability `hog_generated_customer` role, and uses the meta to keep the checkout login and customer reuse to generated customers only. When `main` was merged into `dev`, `_happy_order_generator_user` was dropped in favour of that key. It was never released.
 
 ### 1.5.2 Add order attribution data to generated orders ([#2](https://github.com/nicdwilson/happy-order-generator/issues/2))
 - WooCommerce records **Order Attribution** (source type, referrer, UTM params, device, session data) via the Order Attribution feature, stored as `_wc_order_attribution_*` order meta. Generated orders currently have none, so attribution reports treat them as `(none)`/unknown — less realistic test data.

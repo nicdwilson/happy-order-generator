@@ -1,14 +1,14 @@
 {
     "autoload": {
-        "classmap": ["includes/"],
+        "classmap": [
+            "includes/"
+        ],
         "psr-4": {
-            "Happy_Order_Generator\\": ["includes/"]
+            "Happy_Order_Generator\\": [
+                "includes/"
+            ]
         }
     },
-    "repositories": [{
-        "type": "vcs",
-        "url": "https://github.com/pablo-sg-pacheco/wp-namespace-autoloader"
-    }],
     "require": {
         "fakerphp/faker": "^1.23"
     },
@@ -16,7 +16,12 @@
         "squizlabs/php_codesniffer": "^3.7",
         "wp-coding-standards/wpcs": "^3.0",
         "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
-        "phpcompatibility/php-compatibility": "^9.3"
+        "phpcompatibility/php-compatibility": "^10.0@alpha",
+        "phpstan/phpstan": "^2.1",
+        "szepeviktor/phpstan-wordpress": "^2.0",
+        "php-stubs/woocommerce-stubs": "^11.3",
+        "phpcompatibility/phpcompatibility-wp": "^3.0@alpha",
+        "phpcompatibility/phpcompatibility-paragonie": "^2.0@alpha"
     },
     "config": {
         "allow-plugins": {
@@ -32,6 +37,26 @@
         ],
         "post-install-cmd": [
             "@install-codestandards"
+        ],
+        "qit:security": "phpcs --standard=tests/qit/phpcs-security.xml",
+        "qit:compat": "phpcs --standard=tests/qit/phpcs-compatibility.xml",
+        "qit:phpstan": "phpstan analyse --memory-limit=1G --no-progress",
+        "qit:validate": "php tests/qit/validate.php",
+        "qit:audit": "@composer audit --no-dev",
+        "qit:static": [
+            "@qit:validate",
+            "@qit:compat",
+            "@qit:phpstan",
+            "@qit:audit",
+            "@qit:security"
         ]
+    },
+    "scripts-descriptions": {
+        "qit:security": "QIT Security equivalent: WordPress.Security + WordPress.DB sniffs.",
+        "qit:compat": "QIT Code Compatibility equivalent: PHPCompatibilityWP, PHP 8.1+.",
+        "qit:phpstan": "QIT PHPStan equivalent: level 2 with WordPress/WooCommerce stubs.",
+        "qit:validate": "QIT Validation equivalent: readme.txt, headers, HPOS/blocks declarations.",
+        "qit:audit": "Dependency vulnerability audit (part of QIT Security).",
+        "qit:static": "Run all QIT-equivalent static checks."
     }
 }

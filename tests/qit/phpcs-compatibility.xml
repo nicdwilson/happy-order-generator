@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+	Mirrors QIT's Code Compatibility test (PHPCompatibility, 10.x line).
+	testVersion starts at the plugin's minimum PHP version (ORDER_GENERATOR_MIN_PHP_VER).
+	https://qit.woo.com/docs/managed-tests/phpcompatibility/
+-->
+<ruleset name="HOG QIT PHP Compatibility">
+	<description>QIT-equivalent PHP compatibility checks for Happy Order Generator.</description>
+
+	<file>../../woocommerce-order-generator.php</file>
+	<file>../../includes</file>
+
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+	<arg name="colors"/>
+
+	<config name="testVersion" value="8.1-"/>
+	<rule ref="PHPCompatibilityWP"/>
+</ruleset>

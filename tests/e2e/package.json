@@ -1,0 +1,17 @@
+{
+	"name": "happy-order-generator-e2e",
+	"private": true,
+	"description": "QIT-format E2E test package for Happy Order Generator. Runs locally against wp-env, or under QIT once the plugin is registered.",
+	"scripts": {
+		"env:start": "wp-env start && wp-env run cli bash wp-content/plugins/happy-order-generator/tests/e2e/bootstrap/setup.sh",
+		"env:stop": "wp-env stop",
+		"env:destroy": "wp-env destroy",
+		"test": "playwright test",
+		"test:ui": "playwright test --ui"
+	},
+	"devDependencies": {
+		"@playwright/test": "1.56.1",
+		"@wordpress/env": "10.33.0",
+		"playwright-ctrf-json-reporter": "0.1.0"
+	}
+}
