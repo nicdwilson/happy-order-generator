@@ -21,6 +21,23 @@ class Customer {
 	const GENERATED_META_KEY = '_happy_order_generator_customer';
 
 	/**
+	 * Role given to generated customers. It has no capabilities: the
+	 * Store API checkout and My Account pages don't need any.
+	 */
+	const ROLE = 'hog_generated_customer';
+
+	/**
+	 * Adds the generated customer role if it doesn't exist yet.
+	 *
+	 * @return void
+	 */
+	public static function ensure_role(): void {
+		if ( ! get_role( self::ROLE ) ) {
+			add_role( self::ROLE, __( 'Generated customer (Happy Order Generator)', 'happy-order-generator' ), array() );
+		}
+	}
+
+	/**
 	 * @var array
 	 */
 	private array $settings;
@@ -93,8 +110,10 @@ class Customer {
 			'user_email' => $faker->email(),
 			'first_name' => $first_name,
 			'last_name'  => 'ID',
-			'role'       => 'customer'
+			'role'       => self::ROLE
 		);
+
+		self::ensure_role();
 
 		$user_id = wp_insert_user( $user );
 
@@ -172,12 +191,14 @@ class Customer {
 		if ( $use_existing ) {
 
 			$args = array(
-				'role'        => 'customer',
-				'meta_key'    => self::GENERATED_META_KEY, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_value'  => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				'fields'      => 'ID',
-				'number'      => 1,
-				'count_total' => true,
+				// The meta, not the role, identifies generated customers: other
+				// plugins (WooCommerce Subscriptions, for one) can change roles.
+				'role__not_in' => array( 'administrator', 'shop_manager' ),
+				'meta_key'     => self::GENERATED_META_KEY, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value'   => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'fields'       => 'ID',
+				'number'       => 1,
+				'count_total'  => true,
 			);
 
 			$query = new \WP_User_Query( $args );
