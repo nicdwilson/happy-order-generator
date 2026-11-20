@@ -1,0 +1,88 @@
+name: QIT-equivalent tests
+
+# Mirrors WooCommerce QIT's managed tests (Validation, Code Compatibility,
+# PHPStan, Security, Activation) plus custom E2E tests, without needing a
+# Woo Marketplace listing. See tests/README.md.
+
+on:
+  pull_request:
+  push:
+    branches: [ main, dev ]
+  workflow_dispatch:
+
+concurrency:
+  group: qit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Validation · Compatibility · PHPStan · Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - name: Validation
+        run: composer qit:validate
+      - name: Code Compatibility (PHP 8.1+)
+        run: composer qit:compat
+      - name: PHPStan (level 2, baseline)
+        run: composer qit:phpstan
+      - name: Dependency audit
+        run: composer qit:audit
+
+  security:
+    name: Security (PHPCS WordPress.Security + WordPress.DB)
+    runs-on: ubuntu-latest
+    # Existing findings on main are tracked in tests/README.md. Remove this
+    # line once they are fixed, so new findings block merges.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer qit:security
+
+  e2e:
+    name: Activation + E2E (Playwright, wp-env)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests/e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          coverage: none
+      - name: Install plugin dependencies
+        working-directory: .
+        run: composer install --no-dev --no-interaction --no-progress
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start WordPress (wp-env) and run setup
+        run: npm run env:start
+      - name: Run tests
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            tests/e2e/results/
+            tests/e2e/test-results/
+          retention-days: 14
