@@ -17,7 +17,7 @@ concurrency:
 jobs:
   static:
     name: Validation · Compatibility · PHPStan · Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -37,7 +37,7 @@ jobs:
 
   security:
     name: Security (PHPCS WordPress.Security + WordPress.DB)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Existing findings on main are tracked in tests/README.md. Remove this
     # line once they are fixed, so new findings block merges.
     continue-on-error: true
@@ -53,7 +53,7 @@ jobs:
 
   e2e:
     name: Activation + E2E (Playwright, wp-env)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: tests/e2e
@@ -69,7 +69,7 @@ jobs:
         run: composer install --no-dev --no-interaction --no-progress
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: tests/e2e/package-lock.json
       - run: npm ci
