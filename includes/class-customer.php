@@ -16,6 +16,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Customer {
 
 	/**
+	 * User meta flag set on every customer the generator creates.
+	 */
+	const GENERATED_META_KEY = '_happy_order_generator_customer';
+
+	/**
 	 * @var array
 	 */
 	private array $settings;
@@ -97,6 +102,8 @@ class Customer {
 			return false;
 		}
 
+		update_user_meta( $user_id, self::GENERATED_META_KEY, 1 );
+
 		$last_name      = $this->get_customer_lastname( $faker, $user_id );
 		$customer_email = $this->get_customer_email( $faker, $user_id );
 
@@ -141,30 +148,52 @@ class Customer {
 	}
 
 	/**
-	 * @return false|int|mixed|WP_Error
+	 * Whether a user was created by the generator.
+	 *
+	 * @param int $user_id The user ID.
+	 *
+	 * @return bool
+	 */
+	public static function is_generated( int $user_id ): bool {
+		return $user_id > 0 && '1' === (string) get_user_meta( $user_id, self::GENERATED_META_KEY, true );
+	}
+
+	/**
+	 * Picks a customer for the next order: about half the time an existing
+	 * generated customer, otherwise a new one. Real customers are never used.
+	 *
+	 * @return int|false The user ID, or false if a new user couldn't be created.
 	 */
 	public function get_random_user() {
 
-		$new_customer = ( rand( 1, 100 ) > 50 );
+		$use_existing = ( rand( 1, 100 ) > 50 );
 		$users        = array();
 
-		if ( $new_customer ) {
-
-			$offset = rand( 1, get_user_count() );
+		if ( $use_existing ) {
 
 			$args = array(
-				'role__in'     => array( 'customer' ),
-				'role__not_in' => array( 'administrator', 'shop manager' ),
-				'fields'       => 'ID',
-				'offset'       => $offset,
-				'number'       => 1
+				'role'        => 'customer',
+				'meta_key'    => self::GENERATED_META_KEY, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value'  => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'fields'      => 'ID',
+				'number'      => 1,
+				'count_total' => true,
 			);
 
-			$users = get_users( $args );
+			$query = new \WP_User_Query( $args );
+			$total = (int) $query->get_total();
+
+			if ( $total > 1 ) {
+				$args['offset']      = rand( 0, $total - 1 );
+				$args['count_total'] = false;
+				$query               = new \WP_User_Query( $args );
+			}
+
+			$users = $query->get_results();
 		}
 
-		if ( is_array( $users ) && ! empty( $users[0] ) ) {
-			$user_id = $users[0];
+		if ( ! empty( $users[0] ) ) {
+			$user_id = (int) $users[0];
 		} else {
 			$user_id = $this->create_user();
 		}

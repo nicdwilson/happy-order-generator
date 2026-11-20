@@ -121,20 +121,82 @@ class Order_Generator {
 	}
 
 	/**
-	 * Log the user in before process_customer runs during checkout in store-api
+	 * Header the generator sends with its own Store API checkout requests.
+	 */
+	const CHECKOUT_TOKEN_HEADER = 'X-HOG-Checkout-Token';
+
+	/**
+	 * Issues a single-use token that lets one generator checkout log in as
+	 * the given generated customer. Only a hash of the token is stored.
 	 *
-	 * @param $customer
-	 * @param $request
+	 * @param int $user_id The customer the checkout is for.
+	 *
+	 * @return string The token to send in the CHECKOUT_TOKEN_HEADER header.
+	 */
+	public static function issue_checkout_token( int $user_id ): string {
+
+		$token = bin2hex( random_bytes( 32 ) );
+
+		set_transient( self::checkout_token_key( $token ), $user_id, 2 * MINUTE_IN_SECONDS );
+
+		return $token;
+	}
+
+	/**
+	 * Removes a checkout token, whether or not it was used.
+	 *
+	 * @param string $token The token returned by issue_checkout_token().
+	 *
+	 * @return void
+	 */
+	public static function revoke_checkout_token( string $token ): void {
+		delete_transient( self::checkout_token_key( $token ) );
+	}
+
+	/**
+	 * The transient key for a checkout token.
+	 *
+	 * @param string $token The token.
+	 *
+	 * @return string
+	 */
+	private static function checkout_token_key( string $token ): string {
+		return 'hog_checkout_' . hash( 'sha256', $token );
+	}
+
+	/**
+	 * Log the generated customer in before process_customer runs during a
+	 * Store API checkout.
+	 *
+	 * This runs on every Store API checkout, so it only acts on requests
+	 * that carry a valid single-use token from issue_checkout_token(), and
+	 * only logs in the generated customer that token was issued for.
+	 *
+	 * @param \WC_Customer    $customer The customer being updated.
+	 * @param \WP_REST_Request $request  The checkout request.
 	 *
 	 * @return void
 	 */
 	public function log_customer_in( $customer, $request ): void {
 
-		$user = get_user_by( 'email', sanitize_email( $_POST['billing_address']['email'] ) );
+		$token = (string) $request->get_header( self::CHECKOUT_TOKEN_HEADER );
 
-		if ( $user ) {
-			wc_set_customer_auth_cookie( $user->ID );
+		if ( '' === $token || ! preg_match( '/^[0-9a-f]{64}$/', $token ) ) {
+			return;
 		}
+
+		$key     = self::checkout_token_key( $token );
+		$user_id = (int) get_transient( $key );
+
+		// Single use: remove it before doing anything else.
+		delete_transient( $key );
+
+		// Never log in anyone the generator didn't create, or anyone who can manage the store.
+		if ( ! Customer::is_generated( $user_id ) || user_can( $user_id, 'manage_woocommerce' ) ) {
+			return;
+		}
+
+		wc_set_customer_auth_cookie( $user_id );
 	}
 
 	/**
