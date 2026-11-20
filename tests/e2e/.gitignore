@@ -2,3 +2,4 @@ node_modules/
 results/
 test-results/
 playwright-report/
+bootstrap/wp-env-mu-plugins/hog-e2e-no-background-queue.php

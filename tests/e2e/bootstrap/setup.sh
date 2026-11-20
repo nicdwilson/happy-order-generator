@@ -35,6 +35,22 @@ if ( ! get_page_by_path( "hog-e2e-product", OBJECT, "product" ) ) {
 }
 '
 
+# Keep Action Scheduler from running queued actions in the background (WP-Cron
+# or the async request runner on admin page loads). The generator's action is
+# scheduled to start immediately, so a background run would race the tests.
+# Specs run the callback themselves when they need it.
+MU_DIR="$(wp eval 'echo WPMU_PLUGIN_DIR;')"
+mkdir -p "$MU_DIR"
+cat > "$MU_DIR/hog-e2e-no-background-queue.php" <<'PHP'
+<?php
+/**
+ * Plugin Name: HOG E2E – no background Action Scheduler runs
+ * Description: Test environment only. Written by tests/e2e/bootstrap/setup.sh.
+ */
+add_filter( 'action_scheduler_allow_async_request_runner', '__return_false' );
+add_filter( 'action_scheduler_queue_runner_concurrent_batches', '__return_zero' );
+PHP
+
 # Plugin starts active with no settings; each spec sets what it needs.
 wp plugin activate happy-order-generator
 wp option delete happy_order_generator_settings || true
