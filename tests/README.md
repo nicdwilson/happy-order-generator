@@ -19,7 +19,7 @@ test package, so once the plugin is registered they can run under QIT as they ar
 | PHPStan | Level 2 (QIT CLI default), WordPress + WooCommerce stubs, stubs for Stripe/Subscriptions | `composer qit:phpstan` |
 | Security | PHPCS `WordPress.Security` + `WordPress.DB` sniffs, `composer audit` | `composer qit:security`, `composer qit:audit` |
 | Activation | `tests/e2e/tests/activation.spec.js`: activate from Plugins screen, load admin pages, guest Store API checkout (COD), deactivate, no PHP notices from the plugin | see E2E below |
-| Custom E2E | `tests/e2e/tests/*.spec.js`: enable/disable toggle, real order generation via the Store API | see E2E below |
+| Custom E2E | `tests/e2e/tests/*.spec.js`: enable/disable toggle, real order generation via the Store API, generated customers (meta, no-capability role, real customers never reused), the running notice (rate, admins and shop managers, dismissed per login), and the production block | see E2E below |
 
 Not covered: QIT's Security test also runs SemGrep, WPScan and gitleaks, and
 its Activation test runs a hook-resilience check. There's no Malware or
