@@ -1,19 +1,22 @@
 <?php
 /**
  * Plugin Name: Happy Order Generator
- * Plugin URI:
- * Description: Automated order generator
- * Version: 1
+ * Plugin URI: https://github.com/nicdwilson/happy-order-generator
+ * Description: Automatically generates a steady stream of test orders on WooCommerce test and staging sites.
+ * Version: 1.0.1
  * Author: nicw
  * Author URI: https://woocommerce.com
  * License: GPLv3
  * License URI: http://www.gnu.org/licenses/gpl-3.0
  * Text Domain: happy-order-generator
  * Domain Path: /languages
- * Tested up to: 6.2
+ * Requires at least: 6.2
+ * Requires PHP: 8.1
+ * Requires Plugins: woocommerce
+ * Tested up to: 7.1
  *
  * WC requires at least: 6.7
- * WC tested up to: 7.7
+ * WC tested up to: 11.3
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
