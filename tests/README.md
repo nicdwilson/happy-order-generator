@@ -1,0 +1,80 @@
+# Testing (QIT-equivalent)
+
+Happy Order Generator is tested to the same standard as WooCommerce's
+[Quality Insights Toolkit (QIT)](https://qit.woo.com/docs/).
+
+QIT only runs against extensions registered in the Woo Marketplace, and this
+plugin isn't registered (`qit run:activation happy-order-generator` →
+*Could not find Woo Extension with slug happy-order-generator*). So the same
+checks run here with the same underlying tools, locally and in GitHub Actions
+(`.github/workflows/qit.yml`). The E2E tests are already laid out as a QIT
+test package, so once the plugin is registered they can run under QIT as they are.
+
+## What maps to what
+
+| QIT test | Here | Command |
+|---|---|---|
+| Validation | `tests/qit/validate.php`: readme.txt, required headers, HPOS / Cart-Checkout declarations | `composer qit:validate` |
+| Code Compatibility | PHPCompatibilityWP 10.x (the line QIT uses), PHP 8.1+ | `composer qit:compat` |
+| PHPStan | Level 2 (QIT CLI default), WordPress + WooCommerce stubs, stubs for Stripe/Subscriptions | `composer qit:phpstan` |
+| Security | PHPCS `WordPress.Security` + `WordPress.DB` sniffs, `composer audit` | `composer qit:security`, `composer qit:audit` |
+| Activation | `tests/e2e/tests/activation.spec.js`: activate from Plugins screen, load admin pages, guest Store API checkout (COD), deactivate, no PHP notices from the plugin | see E2E below |
+| Custom E2E | `tests/e2e/tests/*.spec.js`: enable/disable toggle, real order generation via the Store API | see E2E below |
+
+Not covered: QIT's Security test also runs SemGrep, WPScan and gitleaks, and
+its Activation test runs a hook-resilience check. There's no Malware or
+Plugin Check equivalent (Plugin Check is optional for the Marketplace).
+
+All static checks: `composer qit:static`.
+
+## E2E tests
+
+`tests/e2e/` is a QIT test package (`qit-test.json`, Playwright, CTRF results
+in `results/ctrf.json`). Locally it runs against [wp-env](https://www.npmjs.com/package/@wordpress/env)
+(Docker required) at http://localhost:8890 (admin / password):
+
+```sh
+composer install            # the plugin needs vendor/ at runtime
+cd tests/e2e
+npm ci
+npx playwright install chromium
+npm run env:start           # starts WordPress + WooCommerce, runs bootstrap/setup.sh
+npx playwright test         # or: npm run test:ui
+npm run env:stop
+```
+
+`bootstrap/wp-env-mu-plugins/` is wp-env-only glue, mounted by `.wp-env.json`.
+Inside the wp-env containers the site URL (`localhost:8890`) isn't the web
+server, so the plugin's Store API loopback requests are rerouted to the
+WordPress container. It is never shipped and never used under QIT.
+
+### Known failures
+
+These tests are marked `test.fail()`. Playwright counts them as passing while
+they fail, and flags them as soon as the bug is fixed, which means the marker
+should be removed:
+
+| Test | Bug |
+|---|---|
+| Activation › a guest can check out while the plugin is active | `Gateway_Integration_Stripe::do_failure_check()` hooks every Store API checkout and sets real shoppers' orders to `pending` (HTTP 202) |
+| Activation › raised no PHP notices… / Order generation › …no PHP notices… | Same function reads `payment_data['final_status']` without `isset()` |
+| Enable/Disable toggle › saving settings raised no PHP notices… | `save()` reads `$_POST['hog_debug']` / `hog_create_users` without `isset()` |
+
+Unverified: CTRF's summary counts expected failures under `failed`, even
+though each test's status is `passed`. If QIT reads the summary, those runs
+would show as failed until the bugs are fixed.
+
+### Running under QIT (once registered)
+
+```sh
+qit run:e2e happy-order-generator --test-package=./tests/e2e
+qit package:publish ./tests/e2e
+```
+
+## Current baseline (main)
+
+- Validation: **warning**: missing `Requires PHP` and `Requires at least` headers, no readme.txt.
+- Code Compatibility: pass.
+- PHPStan: pass against `tests/qit/phpstan-baseline.neon` (40 existing errors, mostly unchecked `WP_User|false`, plus the Logger `WP_Error` method bug). New errors fail.
+- Security: **28 errors**, mostly missing nonce checks and unslashed/unsanitised input in the settings `save()`, plus `log_customer_in()` reading `$_POST`. The CI job is non-blocking until these are fixed.
+- Audit: pass.
