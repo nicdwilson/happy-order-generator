@@ -195,7 +195,7 @@ class Generator {
 		/**
 		 * If this order contains a subscription, we want to use Stripe if it is available.
 		 */
-		if ( $this->order_contains_subscription && isset( $hog_payment_methods['stripe'] ) && in_array( 'stripe', $this->available_payment_methods ) ) {
+		if ( $this->order_contains_subscription && in_array( 'stripe', $hog_payment_methods, true ) && in_array( 'stripe', $this->available_payment_methods ) ) {
 			return apply_filters( 'hog_subscription_payment_method', 'stripe' );
 		}
 
