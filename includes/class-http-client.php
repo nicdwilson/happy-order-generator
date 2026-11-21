@@ -22,9 +22,9 @@ class HTTP_Client {
 	private string $base_url;
 
 	/**
-	 * @var string
+	 * @var string|null Store API nonce, set by authenticate().
 	 */
-	private string $nonce;
+	private ?string $nonce = null;
 
 	/**
 	 * @var bool
@@ -73,7 +73,6 @@ class HTTP_Client {
 	 */
 	public function authenticate( string $nonce ): void {
 		$this->nonce = $nonce;
-		Logger::info( 'Nonce set for authentication' );
 	}
 
 	/**
@@ -82,7 +81,7 @@ class HTTP_Client {
 	 * @return string|null The current nonce or null if not set
 	 */
 	public function get_nonce(): ?string {
-		return $this->nonce ?? null;
+		return $this->nonce;
 	}
 
 	/**
@@ -96,8 +95,6 @@ class HTTP_Client {
 	public function get( string $endpoint, array $headers = [] ): array {
 		$url = $this->base_url . $endpoint;
 		$args = $this->build_request_args( 'GET', $headers );
-
-		Logger::log_api_request( $endpoint, 'GET', [], [] );
 
 		return $this->make_request( $url, $args, 'GET' );
 	}
@@ -117,8 +114,6 @@ class HTTP_Client {
 		$url = $this->base_url . $endpoint;
 		$args = $this->build_request_args( 'POST', $headers, $data );
 
-		Logger::log_api_request( $endpoint, 'POST', $data, [] );
-
 		return $this->make_request( $url, $args, 'POST', $retry ? $this->max_retries : 1 );
 	}
 
@@ -133,10 +128,6 @@ class HTTP_Client {
 		$url = $this->base_url . '/batch';
 		$data = [ 'requests' => $requests ];
 		$args = $this->build_request_args( 'POST', [], $data );
-
-		Logger::info( 'Batch request initiated', [
-			'request_count' => count( $requests )
-		] );
 
 		return $this->make_request( $url, $args, 'BATCH' );
 	}
@@ -204,13 +195,6 @@ class HTTP_Client {
 				$response_body = wp_remote_retrieve_body( $response );
 
 				$this->remember_session( $response );
-
-				Logger::info( $method . ' request successful', [
-					'url' => $url,
-					'status_code' => $response_code,
-					'response_length' => strlen( $response_body ),
-					'attempt' => $attempt
-				] );
 
 				// Handle 404 responses (nonce might be expired)
 				if ( $response_code === 404 ) {
@@ -283,8 +267,9 @@ class HTTP_Client {
 		}
 
 		if ( is_wp_error( $response ) ) {
-			Logger::log_exception( 'WP_Error occurred during HTTP request', $response, [
-				'url' => $url
+			Logger::error( 'HTTP request failed', [
+				'url'   => $url,
+				'error' => $response->get_error_message(),
 			] );
 			throw new \Exception( esc_html( 'WP_Error: ' . $response->get_error_message() ) );
 		}
@@ -313,31 +298,4 @@ class HTTP_Client {
 		}
 	}
 
-	/**
-	 * Get cookies from the last response
-	 * 
-	 * @return array Cookies array
-	 */
-	public function get_cookies(): array {
-		return array_values( $this->cookies );
-	}
-
-	/**
-	 * Check if the client is authenticated (has a nonce)
-	 * 
-	 * @return bool True if authenticated
-	 */
-	public function is_authenticated(): bool {
-		return ! empty( $this->nonce );
-	}
-
-	/**
-	 * Clear the current nonce (for re-authentication)
-	 * 
-	 * @return void
-	 */
-	public function clear_authentication(): void {
-		$this->nonce = null;
-		Logger::info( 'Authentication cleared' );
-	}
 }

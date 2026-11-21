@@ -29,11 +29,6 @@ class Order_Builder {
 	 */
 	private bool $skip_ssl = false;
 
-	/**
-	 * @var array
-	 */
-	private array $cookies = [];
-
 	public function __construct() {
 		$settings = Order_Generator::get_settings();
 		if ( $settings['skip_ssl'] === 1 ) {
@@ -64,8 +59,6 @@ class Order_Builder {
 
 		// Initialize cart handler with HTTP client
 		$this->cart_handler = new Cart_Handler( $this->http_client );
-
-		Logger::info( 'Order_Builder initialized successfully with nonce' );
 	}
 
 	/**
@@ -86,34 +79,18 @@ class Order_Builder {
 		remove_filter( 'https_ssl_verify', '__return_false' );
 
 		if ( is_wp_error( $response ) ) {
-			Logger::log_exception( 'Error fetching nonce', $response );
+			Logger::error( 'Error fetching nonce', [ 'error' => $response->get_error_message() ] );
 			return false;
 		}
 
 		$headers = wp_remote_retrieve_headers( $response );
 		$nonce = isset( $headers['nonce'] ) ? $headers['nonce'] : false;
 
-		if ( $nonce ) {
-			Logger::info( 'Nonce obtained successfully' );
-		} else {
+		if ( ! $nonce ) {
 			Logger::warning( 'No nonce found in response headers' );
 		}
 
 		return $nonce;
-	}
-
-	/**
-	 * Get the current cart state including payment methods
-	 *
-	 * @return array|false Cart state with payment methods or false on error
-	 */
-	public function get_cart_state(): array|false {
-		try {
-			return $this->cart_handler->get_cart_state();
-		} catch ( \Exception $e ) {
-			Logger::log_exception( 'Error retrieving cart state', $e );
-			return false;
-		}
 	}
 
 	/**
@@ -129,10 +106,6 @@ class Order_Builder {
 			return false;
 		}
 
-		Logger::info( 'Processing cart items via Cart Handler', [
-			'item_count' => count( $cart_items )
-		] );
-		
 		try {
 			$cart_state = $this->cart_handler->add_to_cart( $cart_items );
 			
@@ -140,10 +113,6 @@ class Order_Builder {
 				Logger::warning( 'Cart handler returned false' );
 				return false;
 			}
-
-			Logger::info( 'Cart state retrieved', [
-			'cart_state_keys' => is_array( $cart_state ) ? array_keys( $cart_state ) : ['not_array']
-		] );
 			
 			return $cart_state;
 			
@@ -275,8 +244,6 @@ class Order_Builder {
 		$checkout_token = Order_Generator::issue_checkout_token( (int) $options['user_id'] );
 
 		try {
-			Logger::info( 'Creating order via checkout endpoint' );
-
 			/**
 			 * Not retried: a checkout that fails part-way may already have
 			 * created an order, and the checkout token is single use.
@@ -287,13 +254,6 @@ class Order_Builder {
 				array( Order_Generator::CHECKOUT_TOKEN_HEADER => $checkout_token ),
 				false
 			);
-
-			Logger::log( 'Checkout response: ' . print_r( $response_data, true ) );
-			
-			Logger::info( 'Checkout response received', [
-				'has_order_id' => isset( $response_data['order_id'] ),
-				'response_keys' => array_keys( $response_data )
-			] );
 
 			/**
 			 * Bail if we're broken
@@ -337,10 +297,6 @@ class Order_Builder {
 						'order_id' => $order_id
 					] );
 					$order = new WP_Error( 'invalid_order_id', 'Order ID failed to return an order' );
-				} else {
-					Logger::info( 'Order created successfully', [
-						'order_id' => $order_id
-					] );
 				}
 			}
 
@@ -355,43 +311,5 @@ class Order_Builder {
 		}
 
 		return $order;
-	}
-
-	/**
-	 * Refresh the nonce if it has expired
-	 * 
-	 * @return bool True if nonce was refreshed, false otherwise
-	 */
-	public function refresh_nonce(): bool {
-		Logger::info( 'Attempting to refresh nonce' );
-		
-		$new_nonce = $this->get_nonce();
-		if ( $new_nonce ) {
-			$this->nonce = $new_nonce;
-			$this->http_client->authenticate( $new_nonce );
-			Logger::info( 'Nonce refreshed successfully' );
-			return true;
-		}
-		
-		Logger::error( 'Failed to refresh nonce' );
-		return false;
-	}
-
-	/**
-	 * Get the current nonce
-	 * 
-	 * @return string|null The current nonce or null if not set
-	 */
-	public function get_current_nonce(): ?string {
-		return $this->nonce;
-	}
-
-	/**
-	 * Check if the order builder is properly authenticated
-	 * 
-	 * @return bool True if authenticated
-	 */
-	public function is_authenticated(): bool {
-		return ! empty( $this->nonce ) && $this->http_client->is_authenticated();
 	}
 }

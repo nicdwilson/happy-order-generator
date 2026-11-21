@@ -31,7 +31,6 @@ class Cart_Handler {
 	 */
 	public function __construct( HTTP_Client $http_client ) {
 		$this->http_client = $http_client;
-		Logger::info( 'Cart_Handler initialized with HTTP client' );
 	}
 
 	/**
@@ -50,15 +49,8 @@ class Cart_Handler {
 			// Separate bundle items from regular products
 			$separated_items = $this->separate_cart_items( $cart_items );
 
-			Logger::log_cart_operation( 'Processing cart items', $cart_items, [
-				'total_items' => count( $cart_items ),
-				'bundle_count' => count( $separated_items['bundles'] ),
-				'regular_count' => count( $separated_items['regular_products'] )
-			] );
-
 			// Add bundles with single requests
 			if ( ! empty( $separated_items['bundles'] ) ) {
-				Logger::log( 'Cart_Handler: Adding ' . count( $separated_items['bundles'] ) . ' bundle(s)' );
 				foreach ( $separated_items['bundles'] as $bundle_item ) {
 					$this->add_bundle_to_cart( $bundle_item );
 				}
@@ -66,7 +58,6 @@ class Cart_Handler {
 			
 			// Add regular products with batch request
 			if ( ! empty( $separated_items['regular_products'] ) ) {
-				Logger::log( 'Cart_Handler: Adding ' . count( $separated_items['regular_products'] ) . ' regular product(s)' );
 				$this->add_products_to_cart( $separated_items['regular_products'] );
 			}
 			
@@ -104,14 +95,9 @@ class Cart_Handler {
 			$cart_data = $this->http_client->get( '/cart' );
 			
 			if ( ! isset( $cart_data['payment_methods'] ) || ! is_array( $cart_data['payment_methods'] ) ) {
-				Logger::log( 'Cart_Handler: No payment methods found in cart response' );
+				Logger::warning( 'No payment methods found in cart response' );
 				return false;
 			}
-			
-			Logger::log( 'Cart_Handler: Retrieved cart state', [
-				'payment_methods_count' => count( $cart_data['payment_methods'] ),
-				'payment_methods' => $cart_data['payment_methods']
-			] );
 			
 			return $cart_data;
 			
@@ -149,11 +135,6 @@ class Cart_Handler {
 			}
 		}
 
-		Logger::info( 'Separated cart items', [
-			'bundle_count' => count( $bundles ),
-			'regular_count' => count( $regular_products )
-		] );
-		
 		return [
 			'bundles' => $bundles,
 			'regular_products' => $regular_products
@@ -192,14 +173,7 @@ class Cart_Handler {
 			$data['variation'] = $bundle_item['variation'];
 		}
 
-		$result = $this->http_client->post( '/cart/add-item', $data );
-
-		Logger::log_cart_operation( 'Bundle added successfully', [$bundle_item], [
-			'bundle_id' => $bundle_item['id'],
-			'quantity' => $data['quantity']
-		] );
-
-		return $result;
+		return $this->http_client->post( '/cart/add-item', $data );
 	}
 
 	/**
@@ -235,49 +209,6 @@ class Cart_Handler {
 			];
 		}
 		
-		$result = $this->http_client->batch( $requests );
-
-		Logger::log_cart_operation( 'Regular products added via batch request', $regular_items, [
-			'product_count' => count( $regular_items )
-		] );
-
-		return $result;
-	}
-
-	/**
-	 * Clear the current cart
-	 * 
-	 * @return bool True on success, false on failure
-	 */
-	public function clear_cart() {
-		try {
-			$this->http_client->post( '/cart/clear' );
-			Logger::info( 'Cart cleared successfully' );
-			return true;
-		} catch ( \Exception $e ) {
-			Logger::log_exception( 'Error clearing cart', $e );
-			return false;
-		}
-	}
-
-	/**
-	 * Get available payment methods for the current cart
-	 * 
-	 * @return array Available payment methods
-	 */
-	public function get_payment_methods() {
-		try {
-			$cart_data = $this->get_cart_state();
-			
-			if ( $cart_data === false ) {
-				return [];
-			}
-			
-			return $cart_data['payment_methods'] ?? [];
-			
-		} catch ( \Exception $e ) {
-			Logger::log_exception( 'Error retrieving payment methods', $e );
-			return [];
-		}
+		return $this->http_client->batch( $requests );
 	}
 }

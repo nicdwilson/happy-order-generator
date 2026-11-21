@@ -86,7 +86,6 @@ class Generator {
 		 */
 		$customer            = new Customer();
 		$error_message .= 'Customer user id ' . $customer->get_id() . PHP_EOL;
-		Logger::log( 'Customer created: ' . $customer->get_id() );
 
 		/**
 		 * Selects products to add to the cart
@@ -96,13 +95,10 @@ class Generator {
 		
 		$this->order_contains_subscription = $this->check_cart_for_subscription( $cart_products );
 		$error_message .= 'Adding ' . count( $cart_products ) . ' products to the cart'  . PHP_EOL;
-		Logger::log( 'Cart products prepared: ' . count( $cart_products ) . ' products' );
 
 		$order_builder = new Order_Builder();
 
 		$add_to_cart_response = $order_builder->add_to_cart( $cart_products );
-
-		Logger::log( 'Add to cart response: ' . print_r( $add_to_cart_response, true ) );
 
 		if( ! $add_to_cart_response ){
 			Logger::log( 'Error adding to cart' );
@@ -110,21 +106,18 @@ class Generator {
 			return false;
 		}else{
 			$this->available_payment_methods = $add_to_cart_response['payment_methods'];
-			Logger::log( 'Products added to cart successfully' );
 		}
 
 		/**
 		 * What payment method to use for this order.
 		 */
 		$options['payment_method'] = $this->get_payment_method();
-		Logger::log( 'Payment method selected: ' . $options['payment_method'] );
 
 		/**
 		 * Set the desired final status of the order. Options are processing, completed or failed.
 		 * BACS should go to on-hold, but we don't want that, so we'll switch that too
 		 */
 		$status = $this->get_final_status();
-		Logger::log( 'Order status set to: ' . $status );
 
 		/**
 		 * Set up options to add to checkout data
@@ -137,18 +130,14 @@ class Generator {
 		if ( 'stripe' === $options['payment_method'] ) {
 			$gateway                 = new Gateway_Integration_Stripe();
 			$options['payment_data'] = $gateway->get_payment_data( $customer->get_id(), $status );
-			Logger::log( 'Stripe payment data prepared' );
 		}
 
 		$options['payment_data']['final_status'] = $status;
-
-		Logger::log( 'Payment data prepared: ' . print_r( $options, true ) );
 
 		/**
 		 * Checkout, with additional options, get back the order and
 		 * convert it into a regular order object
 		 */
-		Logger::log( 'Starting checkout process...' );
 		$order = $order_builder->do_checkout( $options );
 
 		// Bail if we're broken
@@ -159,7 +148,6 @@ class Generator {
 			return false;
 		}
 
-		Logger::log( 'Checkout completed successfully, order ID: ' . $order->get_id() );
 
 		/**
 		 * Set the fake customer IP.
@@ -203,9 +191,8 @@ class Generator {
 
 		$order->save();
 
-		Logger::log( __('Order ID ' . $order->get_id() . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'], 'happy-order-generator' ) );
+		Logger::log( 'Order ID ' . $order->get_id() . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'] );
 
-		Logger::log( 'Order generation completed successfully' );
 		return true;
 	}
 
