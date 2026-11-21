@@ -236,10 +236,11 @@ class Generator {
 	}
 
 	/**
-	 * Checks items in the cart for a subscription. We don't want manual renewals cluttering things
-	 * up, so we're going to make sure subs don't go through as bacs payments.
+	 * Checks items in the cart for a subscription, including subscriptions inside
+	 * bundles. We don't want manual renewals cluttering things up, so we're going
+	 * to make sure subs don't go through as bacs payments.
 	 *
-	 * @param $cart_items
+	 * @param array $cart_items Cart items from Product::get_products_for_cart().
 	 *
 	 * @return bool True if cart contains a subscription.
 	 */
@@ -253,12 +254,34 @@ class Generator {
 				continue;
 			}
 
-			if ( $product->is_type( 'subscription' ) || $product->is_type( 'variable-subscription' ) || $product->is_type( 'subscription_variation' ) ) {
+			if ( $this->is_subscription_product( $product ) ) {
 				return true;
+			}
+
+			if ( empty( $cart_item['bundle_configuration'] ) || ! $product instanceof \WC_Product_Bundle ) {
+				continue;
+			}
+
+			$bundled_items = $product->get_bundled_items();
+
+			foreach ( $cart_item['bundle_configuration'] as $row ) {
+				$bundled_item = $bundled_items[ $row['bundled_item_id'] ] ?? null;
+
+				if ( $bundled_item && $bundled_item->product && $this->is_subscription_product( $bundled_item->product ) ) {
+					return true;
+				}
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * @param \WC_Product $product
+	 * @return bool True if the product is a subscription, variable subscription or subscription variation.
+	 */
+	private function is_subscription_product( $product ): bool {
+		return $product->is_type( array( 'subscription', 'variable-subscription', 'subscription_variation' ) );
 	}
 
 	/**

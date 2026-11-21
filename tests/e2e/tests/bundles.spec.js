@@ -6,7 +6,7 @@
  * (see tests/README.md).
  */
 const { test, expect } = require( '@playwright/test' );
-const { wpEval, setSettings, generatedOrderCount, runGeneratorBatch, clearScheduledActions, productIdBySlug } = require( './utils/wp' );
+const { wp, wpEval, setSettings, generatedOrderCount, runGeneratorBatch, clearScheduledActions, productIdBySlug, loginAsAdmin, SETTINGS_URL } = require( './utils/wp' );
 
 /**
  * Creates (or reuses) a virtual variable product with a custom Size attribute
@@ -54,7 +54,7 @@ async function ensureVariable( slug ) {
  * Creates a published bundle of virtual products, replacing any earlier one.
  *
  * @param {string} slug    Bundle slug.
- * @param {Array}  items   Bundled items: { slug, optional, min, max, outOfStock?, variable? }.
+ * @param {Array}  items   Bundled items: { slug, optional, min, max, outOfStock?, variable?, subscription? }.
  *                         A max of null means no maximum.
  * @param {Object} options Bundle item limits: { minSize?, maxSize? }.
  * @return {Promise<number>} Bundle product ID.
@@ -68,9 +68,10 @@ async function ensureBundle( slug, items, options = {} ) {
 		// Recreate each run so fixture changes always apply.
 		$existing = get_page_by_path( '${ slug }', OBJECT, 'product' );
 		if ( $existing ) { wc_get_product( $existing->ID )->delete( true ); }
-		$simple = function ( $slug, $out_of_stock ) {
+		$simple = function ( $slug, $out_of_stock, $subscription ) {
 			$p = get_page_by_path( $slug, OBJECT, 'product' );
-			$x = $p ? wc_get_product( $p->ID ) : new WC_Product_Simple();
+			$x = $p ? wc_get_product( $p->ID ) : ( $subscription ? new WC_Product_Subscription() : new WC_Product_Simple() );
+			if ( $subscription ) { $x->update_meta_data( '_subscription_price', '5' ); $x->update_meta_data( '_subscription_period', 'month' ); $x->update_meta_data( '_subscription_period_interval', '1' ); }
 			$x->set_name( $slug ); $x->set_slug( $slug ); $x->set_regular_price( '5' );
 			$x->set_virtual( true ); $x->set_status( 'publish' );
 			$x->set_stock_status( $out_of_stock ? 'outofstock' : 'instock' );
@@ -80,7 +81,7 @@ async function ensureBundle( slug, items, options = {} ) {
 		$data = array();
 		foreach ( json_decode( '${ JSON.stringify( items ) }', true ) as $i => $item ) {
 			$data[] = array(
-				'product_id' => $ids[ $i ] ? $ids[ $i ] : $simple( $item['slug'], ! empty( $item['outOfStock'] ) ),
+				'product_id' => $ids[ $i ] ? $ids[ $i ] : $simple( $item['slug'], ! empty( $item['outOfStock'] ), ! empty( $item['subscription'] ) ),
 				'meta_data'  => array(
 					'optional'         => $item['optional'] ? 'yes' : 'no',
 					'quantity_min'     => $item['min'],
@@ -246,5 +247,81 @@ test.describe( 'Product Bundles', () => {
 		const lines = await generateOneOrder( 'order' );
 		expect( lines.containers ).toEqual( [] );
 		expect( lines.other ).toEqual( [ 'hog-e2e-product' ] );
+	} );
+
+	test( 'a subscription inside a bundle is detected, so the order can use a gateway that renews it', async () => {
+		const active = await wpEval( "echo class_exists( 'WC_Subscriptions' ) ? 'yes' : 'no';" );
+		test.skip( active !== 'yes', 'Woo Subscriptions is not active' );
+
+		const bundleId = await ensureBundle( 'hog-e2e-bundle-subscription', [
+			{ slug: 'hog-e2e-bundled-a', optional: false, min: 1, max: 1 },
+			{ slug: 'hog-e2e-bundled-subscription', optional: true, min: 1, max: 1, subscription: true },
+		] );
+		const detected = JSON.parse(
+			await wpEval( `
+				$items = array();
+				foreach ( wc_get_product( ${ bundleId } )->get_bundled_items() as $id => $item ) {
+					$items[ $item->product->get_slug() ] = $id;
+				}
+				$check = new ReflectionMethod( Happy_Order_Generator\\Generator::class, 'check_cart_for_subscription' );
+				$check->setAccessible( true );
+				$cart = function ( $slugs ) use ( $items ) {
+					$rows = array();
+					foreach ( $slugs as $slug ) { $rows[] = array( 'bundled_item_id' => $items[ $slug ], 'quantity' => 1 ); }
+					return array( array( 'id' => ${ bundleId }, 'quantity' => 1, 'bundle_configuration' => $rows ) );
+				};
+				$generator = new Happy_Order_Generator\\Generator();
+				echo wp_json_encode( array(
+					'with'    => $check->invoke( $generator, $cart( array( 'hog-e2e-bundled-a', 'hog-e2e-bundled-subscription' ) ) ),
+					'without' => $check->invoke( $generator, $cart( array( 'hog-e2e-bundled-a' ) ) ),
+				) );
+			` )
+		);
+		expect( detected ).toEqual( { with: true, without: false } );
+	} );
+} );
+
+/**
+ * Bundles selected in the settings while Product Bundles is inactive. Runs
+ * with or without Product Bundles installed: it's deactivated for these tests
+ * and reactivated afterwards.
+ */
+test.describe( 'Bundles without Product Bundles', () => {
+	const PB = 'woocommerce-product-bundles';
+	let wasActive = false;
+
+	test.beforeAll( async () => {
+		wasActive = ( await wpEval( "echo class_exists( 'WC_Product_Bundle' ) ? 'yes' : 'no';" ) ) === 'yes';
+		if ( wasActive ) {
+			await wp( [ 'plugin', 'deactivate', PB ] );
+		}
+	} );
+
+	test.afterAll( async () => {
+		if ( wasActive ) {
+			await wp( [ 'plugin', 'activate', PB ] );
+		}
+	} );
+
+	test( 'the settings page names selected bundles that can\'t be used', async ( { page } ) => {
+		// A product stored as a bundle, as Product Bundles would have left it.
+		const bundleId = Number(
+			await wpEval( `
+				$p = get_page_by_path( 'hog-e2e-orphan-bundle', OBJECT, 'product' );
+				$id = $p ? $p->ID : wp_insert_post( array( 'post_type' => 'product', 'post_status' => 'publish', 'post_title' => 'HOG orphan bundle', 'post_name' => 'hog-e2e-orphan-bundle' ) );
+				wp_set_object_terms( $id, 'bundle', 'product_type' );
+				echo $id;
+			` )
+		);
+		const productId = await productIdBySlug( 'hog-e2e-product' );
+
+		await setSettings( { orders_per_hour: 6, products: [ String( bundleId ), String( productId ) ] } );
+		await loginAsAdmin( page );
+		await page.goto( SETTINGS_URL );
+		await expect( page.getByText( "Product Bundles isn't active, so this selected product can't be added to generated orders: HOG orphan bundle" ) ).toBeVisible();
+
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ] } );
+		await page.goto( SETTINGS_URL );
+		await expect( page.getByText( "Product Bundles isn't active" ) ).toHaveCount( 0 );
 	} );
 } );

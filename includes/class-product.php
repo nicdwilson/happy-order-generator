@@ -25,7 +25,7 @@ class Product {
 		'simple',
 		'variable',
 		'subscription',
-		'variable_subscription',
+		'variable-subscription',
 		'variation',
 		'bundle'
 	);
@@ -206,6 +206,7 @@ class Product {
 					$variation    = wc_get_product( $variation_id );
 					break;
 				case 'variable':
+				case 'variable-subscription':
 					$variations   = $product->get_children();
 					$index        = rand( 0, count( $variations ) - 1 );
 					$variation_id = (int) $variations[ $index ];
