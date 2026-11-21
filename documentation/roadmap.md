@@ -124,7 +124,7 @@ Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required it
 **Make the rest of the order flow bundle-aware**
 
 - [x] **Subscriptions inside bundles:** `Generator::check_cart_for_subscription()` only checks top-level products, so a bundle containing a subscription isn't detected and a gateway that can't renew it (BACS) can be chosen. Check bundled items too. Also fix the `variable_subscription` type string in `Product::$product_types` (should be `variable-subscription`).
-  - *Found November 2026, on `main` too:* `Generator::get_payment_method()` checks `isset( $hog_payment_methods['stripe'] )`, but Stripe is added to that list as a value, not a key, so subscription orders never prefer Stripe. Fix from `main`.
+  - *Found November 2026, on `main` too:* `Generator::get_payment_method()` checks `isset( $hog_payment_methods['stripe'] )`, but Stripe is added to that list as a value, not a key, so subscription orders never prefer Stripe. *Fixed on `main` (#25).*
 - [x] Decide and document behaviour when Product Bundles is **not** active: `bundle` type is already removed from `$product_types`; add a settings-page notice if the admin has explicitly selected a bundle product that can't be used.
 
 **Clean up the refactor before it reaches `main`**
