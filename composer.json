@@ -41,7 +41,7 @@
         "qit:security": "phpcs --standard=tests/qit/phpcs-security.xml",
         "qit:compat": "phpcs --standard=tests/qit/phpcs-compatibility.xml",
         "qit:phpstan": "phpstan analyse --memory-limit=1G --no-progress",
-        "qit:validate": "php tests/qit/validate.php",
+        "qit:validate": "php tests/qit/validate.php --strict",
         "qit:audit": "@composer audit --no-dev",
         "qit:static": [
             "@qit:validate",
