@@ -52,8 +52,11 @@ WordPress container. It is never shipped and never used under QIT.
 
 `tests/bundles.spec.js` covers required and optional items, quantity ranges
 (including no maximum), variable bundled items, bundle min/max item limits
-and out-of-stock items. It needs Product Bundles, a licensed extension, so it
-skips when Product Bundles isn't active (as in CI). To run it locally, mount
+and out-of-stock items, subscriptions inside bundles, and the settings notice
+for bundles selected while Product Bundles is inactive. It needs Product
+Bundles, a licensed extension, so it skips when Product Bundles isn't active
+(as in CI), except for the inactive-Product-Bundles notice test, which always
+runs. The subscription test also needs Woo Subscriptions; mount it the same way. To run it locally, mount
 your copy with a `tests/e2e/.wp-env.override.json` file (gitignored):
 
 ```json
