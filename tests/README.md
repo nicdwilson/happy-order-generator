@@ -91,7 +91,7 @@ qit package:publish ./tests/e2e
 
 ## Current baseline (main)
 
-- Validation: **warning**: missing `Requires PHP` and `Requires at least` headers, no readme.txt.
+- Validation: pass (0 errors, 0 warnings). `composer qit:validate` runs in strict mode, so new warnings fail too.
 - Code Compatibility: pass.
 - PHPStan: pass against `tests/qit/phpstan-baseline.neon` (40 existing errors, mostly unchecked `WP_User|false`, plus the Logger `WP_Error` method bug). New errors fail.
 - Security: pass (0 errors). The CI job blocks merges.
