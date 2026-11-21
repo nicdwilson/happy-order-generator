@@ -114,11 +114,12 @@ Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required it
 
 **Generate valid configurations for every kind of bundle** (`Product::generate_bundle_configuration()`)
 
-- [ ] Re-enable the commented-out **variable products inside bundles** block in `Product::generate_bundle_configuration()`; confirm the expected keys (`variation_id`, `attributes` with `name`/`option`) against the Product Bundles Store API contract, and reuse the existing "Any attribute" fallback logic from the variation handling above it.
+- [x] Re-enable the commented-out **variable products inside bundles** block in `Product::generate_bundle_configuration()`; confirm the expected keys (`variation_id`, `attributes` with `name`/`option`) against the Product Bundles Store API contract, and reuse the existing "Any attribute" fallback logic from the variation handling above it.
   - **Product Bundles 8.6.0+ simplifies this** (checked against 8.7.0). `WC_PB_Cart::complete_variation_attributes()` fills in a chosen variation's fixed attributes, on add to cart and when building order configurations. So a bundled variable item can be sent with just `variation_id`, plus `attributes` rows (`name`/`option`) only for attributes the variation leaves as "Any". Pick the variation from `WC_Bundled_Item::get_product_variations()`, which respects the bundle's allowed-variations filter. Earlier versions need every attribute sent explicitly, so either require Product Bundles 8.6.0, or send all attributes to stay compatible with older versions.
-- [ ] Respect the bundle-level **min/max item limits** from the Min/Max Items module (`_wcpb_min_qty_limit` / `_wcpb_max_qty_limit`). Random optional picks can currently fall outside them and be rejected.
-- [ ] Handle bundled items with **no maximum quantity**: `get_quantity( 'max' )` returns `''`, so the generator always uses the minimum. Pick from a sensible range instead.
-- [ ] Respect **stock and purchasability**: skip out-of-stock optional items, and skip bundles that fail `is_purchasable()` / `is_in_stock()` or have an out-of-stock required item. Today such a bundle fails the whole order at add to cart.
+  - *Done: sends every attribute, so no minimum Product Bundles version is needed.*
+- [x] Respect the bundle-level **min/max item limits** from the Min/Max Items module (`_wcpb_min_qty_limit` / `_wcpb_max_qty_limit`). Random optional picks can currently fall outside them and be rejected.
+- [x] Handle bundled items with **no maximum quantity**: `get_quantity( 'max' )` returns `''`, so the generator always uses the minimum. Pick from a sensible range instead.
+- [x] Respect **stock and purchasability**: skip out-of-stock optional items, and skip bundles that fail `is_purchasable()` / `is_in_stock()` or have an out-of-stock required item. Today such a bundle fails the whole order at add to cart.
 
 **Make the rest of the order flow bundle-aware**
 
