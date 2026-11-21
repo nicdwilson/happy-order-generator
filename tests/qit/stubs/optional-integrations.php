@@ -52,9 +52,21 @@ class WC_Product_Bundle extends WC_Product {
 	 * @return array<int, WC_Bundled_Item> Keyed by bundled item ID.
 	 */
 	public function get_bundled_items( $context = 'view' ) {}
+	/**
+	 * @param string $context
+	 * @return int|'' '' when there is no limit.
+	 */
+	public function get_min_bundle_size( $context = 'view' ) {}
+	/**
+	 * @param string $context
+	 * @return int|'' '' when there is no limit.
+	 */
+	public function get_max_bundle_size( $context = 'view' ) {}
 }
 
 class WC_Bundled_Item {
+	/** @var WC_Product|false The bundled product. */
+	public $product;
 	/** @return int Bundled item ID. */
 	public function get_id() {}
 	/** @return int ID of the bundled product. */
@@ -63,8 +75,17 @@ class WC_Bundled_Item {
 	public function is_optional() {}
 	/** @return bool */
 	public function is_variable() {}
-	/** @return int[] */
+	/** @return bool */
+	public function is_purchasable() {}
+	/** @return bool */
+	public function is_in_stock() {}
+	/** @return array<int, array<string, mixed>>|false|null Available variations data. */
 	public function get_product_variations() {}
+	/**
+	 * @param bool $return_configurable
+	 * @return array<string, array<int, string>>|false
+	 */
+	public function get_product_variation_attributes( $return_configurable = false ) {}
 	/**
 	 * @param string $type min|max|default
 	 * @param array  $args
