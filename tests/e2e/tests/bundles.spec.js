@@ -6,43 +6,95 @@
  * (see tests/README.md).
  */
 const { test, expect } = require( '@playwright/test' );
-const { wpEval, setSettings, generatedOrderCount, runGeneratorBatch, clearScheduledActions } = require( './utils/wp' );
+const { wpEval, setSettings, generatedOrderCount, runGeneratorBatch, clearScheduledActions, productIdBySlug } = require( './utils/wp' );
+
+/**
+ * Creates (or reuses) a virtual variable product with a custom Size attribute
+ * (S, M) and a global hogcolor attribute (red, blue). Variations: size S with
+ * any colour, and size M in red.
+ *
+ * @param {string} slug Product slug.
+ * @return {Promise<number>} Product ID.
+ */
+async function ensureVariable( slug ) {
+	const php = `
+		$p = get_page_by_path( '${ slug }', OBJECT, 'product' );
+		if ( $p ) { echo $p->ID; return; }
+		if ( ! wc_attribute_taxonomy_id_by_name( 'hogcolor' ) ) {
+			wc_create_attribute( array( 'name' => 'HOG Color', 'slug' => 'hogcolor' ) );
+		}
+		if ( ! taxonomy_exists( 'pa_hogcolor' ) ) { register_taxonomy( 'pa_hogcolor', 'product' ); }
+		$terms = array();
+		foreach ( array( 'red', 'blue' ) as $t ) {
+			$term = term_exists( $t, 'pa_hogcolor' );
+			$terms[] = (int) ( $term ? $term['term_id'] : wp_insert_term( ucfirst( $t ), 'pa_hogcolor', array( 'slug' => $t ) )['term_id'] );
+		}
+		$size = new WC_Product_Attribute();
+		$size->set_name( 'Size' ); $size->set_options( array( 'S', 'M' ) ); $size->set_visible( true ); $size->set_variation( true );
+		$color = new WC_Product_Attribute();
+		$color->set_id( wc_attribute_taxonomy_id_by_name( 'hogcolor' ) ); $color->set_name( 'pa_hogcolor' );
+		$color->set_options( $terms ); $color->set_visible( true ); $color->set_variation( true );
+		$product = new WC_Product_Variable();
+		$product->set_name( '${ slug }' ); $product->set_slug( '${ slug }' ); $product->set_status( 'publish' );
+		$product->set_attributes( array( $size, $color ) );
+		$id = $product->save();
+		foreach ( array( array( 'size' => 'S', 'pa_hogcolor' => '' ), array( 'size' => 'M', 'pa_hogcolor' => 'red' ) ) as $attributes ) {
+			$v = new WC_Product_Variation();
+			$v->set_parent_id( $id ); $v->set_attributes( $attributes );
+			$v->set_regular_price( '5' ); $v->set_virtual( true ); $v->set_status( 'publish' );
+			$v->save();
+		}
+		WC_Product_Variable::sync( $id );
+		echo $id;
+	`;
+	return Number( await wpEval( php ) );
+}
 
 /**
  * Creates a published bundle of virtual products, replacing any earlier one.
  *
- * @param {string} slug  Bundle slug.
- * @param {Array}  items Bundled items: { slug, optional, min, max }.
+ * @param {string} slug    Bundle slug.
+ * @param {Array}  items   Bundled items: { slug, optional, min, max, outOfStock?, variable? }.
+ *                         A max of null means no maximum.
+ * @param {Object} options Bundle item limits: { minSize?, maxSize? }.
  * @return {Promise<number>} Bundle product ID.
  */
-async function ensureBundle( slug, items ) {
+async function ensureBundle( slug, items, options = {} ) {
+	const ids = [];
+	for ( const item of items ) {
+		ids.push( item.variable ? await ensureVariable( item.slug ) : 0 );
+	}
 	const php = `
 		// Recreate each run so fixture changes always apply.
 		$existing = get_page_by_path( '${ slug }', OBJECT, 'product' );
 		if ( $existing ) { wc_get_product( $existing->ID )->delete( true ); }
-		$simple = function ( $slug ) {
+		$simple = function ( $slug, $out_of_stock ) {
 			$p = get_page_by_path( $slug, OBJECT, 'product' );
-			if ( $p ) { return $p->ID; }
-			$x = new WC_Product_Simple();
+			$x = $p ? wc_get_product( $p->ID ) : new WC_Product_Simple();
 			$x->set_name( $slug ); $x->set_slug( $slug ); $x->set_regular_price( '5' );
 			$x->set_virtual( true ); $x->set_status( 'publish' );
+			$x->set_stock_status( $out_of_stock ? 'outofstock' : 'instock' );
 			return $x->save();
 		};
+		$ids  = json_decode( '${ JSON.stringify( ids ) }', true );
 		$data = array();
-		foreach ( json_decode( '${ JSON.stringify( items ) }', true ) as $item ) {
+		foreach ( json_decode( '${ JSON.stringify( items ) }', true ) as $i => $item ) {
 			$data[] = array(
-				'product_id' => $simple( $item['slug'] ),
+				'product_id' => $ids[ $i ] ? $ids[ $i ] : $simple( $item['slug'], ! empty( $item['outOfStock'] ) ),
 				'meta_data'  => array(
 					'optional'         => $item['optional'] ? 'yes' : 'no',
 					'quantity_min'     => $item['min'],
-					'quantity_max'     => $item['max'],
+					'quantity_max'     => isset( $item['max'] ) ? $item['max'] : '',
 					'quantity_default' => $item['min'],
 				),
 			);
 		}
-		$bundle = new WC_Product_Bundle();
+		$options = json_decode( '${ JSON.stringify( options ) }', true );
+		$bundle  = new WC_Product_Bundle();
 		$bundle->set_name( '${ slug }' ); $bundle->set_slug( '${ slug }' );
 		$bundle->set_regular_price( '20' ); $bundle->set_virtual( true ); $bundle->set_status( 'publish' );
+		if ( isset( $options['minSize'] ) ) { $bundle->set_min_bundle_size( $options['minSize'] ); }
+		if ( isset( $options['maxSize'] ) ) { $bundle->set_max_bundle_size( $options['maxSize'] ); }
 		$bundle->set_bundled_data_items( $data );
 		echo $bundle->save();
 	`;
@@ -54,14 +106,27 @@ async function latestOrderBundleLines() {
 	return JSON.parse(
 		await wpEval(
 			"$o = wc_get_orders( array( 'limit' => 1, 'orderby' => 'id', 'order' => 'DESC', 'meta_key' => '_happy_order_generator_order', 'meta_value' => 1 ) )[0];" +
-				"$lines = array( 'containers' => array(), 'bundled' => array() );" +
+				"$lines = array( 'containers' => array(), 'bundled' => array(), 'other' => array() );" +
 				"foreach ( $o->get_items() as $item ) {" +
+				"  $slug = get_post_field( 'post_name', $item->get_product_id() );" +
 				"  if ( wc_pb_is_bundle_container_order_item( $item ) ) { $lines['containers'][] = $item->get_product_id(); }" +
-				"  elseif ( wc_pb_is_bundled_order_item( $item ) ) { $lines['bundled'][] = array( 'slug' => get_post_field( 'post_name', $item->get_product_id() ), 'qty' => $item->get_quantity() ); }" +
+				"  elseif ( wc_pb_is_bundled_order_item( $item ) ) {" +
+				"    $line = array( 'slug' => $slug, 'qty' => $item->get_quantity() );" +
+				"    if ( $item->get_variation_id() ) { $line['variation'] = array( 'parent' => wp_get_post_parent_id( $item->get_variation_id() ), 'size' => $item->get_meta( 'size' ), 'color' => $item->get_meta( 'pa_hogcolor' ) ); }" +
+				"    $lines['bundled'][] = $line;" +
+				"  } else { $lines['other'][] = $slug; }" +
 				"}" +
 				"echo wp_json_encode( $lines );"
 		)
 	);
+}
+
+/** Runs one generator batch and expects exactly one new generated order. */
+async function generateOneOrder( label ) {
+	const before = await generatedOrderCount();
+	await runGeneratorBatch( 1 );
+	expect( await generatedOrderCount(), label ).toBe( before + 1 );
+	return latestOrderBundleLines();
 }
 
 test.describe( 'Product Bundles', () => {
@@ -112,5 +177,74 @@ test.describe( 'Product Bundles', () => {
 			const optional = lines.bundled.filter( ( line ) => line.slug === 'hog-e2e-bundled-b' );
 			expect( optional.length ).toBeLessThanOrEqual( 1 );
 		}
+	} );
+
+	test( 'variable bundled items get an in-stock variation with every attribute set', async () => {
+		const bundleId = await ensureBundle( 'hog-e2e-bundle-variable', [ { slug: 'hog-e2e-bundled-variable', optional: false, min: 1, max: 1, variable: true } ] );
+		const variableId = await productIdBySlug( 'hog-e2e-bundled-variable' );
+		await setSettings( { orders_per_hour: 6, products: [ String( bundleId ) ] } );
+
+		// Several orders, so both variations are likely to come up.
+		for ( let i = 0; i < 4; i++ ) {
+			const lines = await generateOneOrder( `order ${ i + 1 }` );
+			expect( lines.containers ).toEqual( [ bundleId ] );
+			expect( lines.bundled ).toHaveLength( 1 );
+
+			const { variation } = lines.bundled[ 0 ];
+			expect( variation, 'the bundled line is a variation' ).toBeTruthy();
+			expect( variation.parent ).toBe( variableId );
+			// Size M is only sold in red; size S takes any colour.
+			expect( [ 'S', 'M' ] ).toContain( variation.size );
+			expect( variation.size === 'M' ? [ 'red' ] : [ 'red', 'blue' ] ).toContain( variation.color );
+		}
+	} );
+
+	test( 'bundle min/max item limits are respected', async () => {
+		const items = [ 'a', 'b', 'c' ].map( ( x ) => ( { slug: `hog-e2e-bundled-${ x }`, optional: true, min: 1, max: 2 } ) );
+		const bundleId = await ensureBundle( 'hog-e2e-bundle-limits', items, { minSize: 3, maxSize: 4 } );
+		await setSettings( { orders_per_hour: 6, products: [ String( bundleId ) ] } );
+
+		for ( let i = 0; i < 4; i++ ) {
+			const lines = await generateOneOrder( `order ${ i + 1 }` );
+			expect( lines.containers ).toEqual( [ bundleId ] );
+			const total = lines.bundled.reduce( ( sum, line ) => sum + line.qty, 0 );
+			expect( total ).toBeGreaterThanOrEqual( 3 );
+			expect( total ).toBeLessThanOrEqual( 4 );
+		}
+	} );
+
+	test( 'items with no maximum quantity get a quantity from a small range', async () => {
+		const bundleId = await ensureBundle( 'hog-e2e-bundle-unlimited', [ { slug: 'hog-e2e-bundled-a', optional: false, min: 1, max: null } ] );
+		await setSettings( { orders_per_hour: 6, products: [ String( bundleId ) ] } );
+
+		for ( let i = 0; i < 3; i++ ) {
+			const lines = await generateOneOrder( `order ${ i + 1 }` );
+			expect( lines.bundled ).toHaveLength( 1 );
+			expect( lines.bundled[ 0 ].qty ).toBeGreaterThanOrEqual( 1 );
+			expect( lines.bundled[ 0 ].qty ).toBeLessThanOrEqual( 3 );
+		}
+	} );
+
+	test( 'out-of-stock optional items are left out', async () => {
+		const bundleId = await ensureBundle( 'hog-e2e-bundle-oos-optional', [
+			{ slug: 'hog-e2e-bundled-a', optional: false, min: 1, max: 1 },
+			{ slug: 'hog-e2e-bundled-oos', optional: true, min: 1, max: 1, outOfStock: true },
+		] );
+		await setSettings( { orders_per_hour: 6, products: [ String( bundleId ) ] } );
+
+		for ( let i = 0; i < 3; i++ ) {
+			const lines = await generateOneOrder( `order ${ i + 1 }` );
+			expect( lines.bundled.map( ( line ) => line.slug ) ).toEqual( [ 'hog-e2e-bundled-a' ] );
+		}
+	} );
+
+	test( 'a bundle with an out-of-stock required item is skipped, and the rest of the order goes through', async () => {
+		const bundleId = await ensureBundle( 'hog-e2e-bundle-oos-required', [ { slug: 'hog-e2e-bundled-oos', optional: false, min: 1, max: 1, outOfStock: true } ] );
+		const productId = await productIdBySlug( 'hog-e2e-product' );
+		await setSettings( { orders_per_hour: 6, min_order_products: 2, max_order_products: 2, products: [ String( bundleId ), String( productId ) ] } );
+
+		const lines = await generateOneOrder( 'order' );
+		expect( lines.containers ).toEqual( [] );
+		expect( lines.other ).toEqual( [ 'hog-e2e-product' ] );
 	} );
 } );
