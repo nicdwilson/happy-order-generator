@@ -10,6 +10,7 @@ xxxx-xx-xx - version x.x.x
 * Tweak - Order generation only runs on sites whose environment type is local, development or staging. Change the allowed types with the hog_allowed_environment_types filter.
 * Tweak - Only customers created by the generator are reused for new orders. Real customers are never used.
 * Tweak - Tested up to WordPress 7.1 and WooCommerce 11.3.
+* Fix - Orders containing a subscription now use Stripe when it is available, so they can renew automatically, instead of a random supported gateway.
 * Fix - Setting Orders per Hour to 0, leaving it empty or entering a negative number now stops generation, instead of generating about 60 orders an hour.
 * Fix - PHP warning when Orders per Hour doesn't divide evenly into an hour.
 * Fix - Block checkouts by real shoppers were left pending (HTTP 202) while the plugin was active.
