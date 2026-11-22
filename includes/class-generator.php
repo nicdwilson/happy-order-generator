@@ -114,6 +114,17 @@ class Generator {
 		$options['payment_method'] = $this->get_payment_method();
 
 		/**
+		 * Nothing we support can pay for this cart. A subscription without
+		 * Stripe is one case: Woo Subscriptions hides BACS unless manual
+		 * renewals are accepted.
+		 */
+		if ( '' === $options['payment_method'] ) {
+			Logger::log( 'No supported payment method is available for this cart, so no order was created.' );
+			Logger::log( $error_message );
+			return false;
+		}
+
+		/**
 		 * Set the desired final status of the order. Options are processing, completed or failed.
 		 * BACS should go to on-hold, but we don't want that, so we'll switch that too
 		 */
@@ -201,7 +212,7 @@ class Generator {
 	 * Stripe is added via the filter because we need to check that Stripe is up and
 	 * in test mode before using it.
 	 *
-	 * @return string
+	 * @return string The gateway ID, or '' when no supported gateway is available.
 	 */
 	public function get_payment_method(): string {
 
@@ -218,6 +229,10 @@ class Generator {
 		 * Make sure the methods are all available for this order
 		 */
 		$hog_payment_methods = array_intersect( $hog_payment_methods, $this->available_payment_methods );
+
+		if ( empty( $hog_payment_methods ) ) {
+			return '';
+		}
 
 		return apply_filters('hog_payment_method', array_rand( array_flip( $hog_payment_methods ) ) );
 	}
