@@ -81,4 +81,87 @@ test.describe( 'Payment method choice', () => {
 		// 40 picks from two gateways: both turn up except with odds of about 1 in 500 billion.
 		expect( ( await chosenMethods( false, 40 ) ).sort() ).toEqual( [ 'bacs', 'stripe' ] );
 	} );
+
+	test( 'no method is chosen when no supported gateway is available', async () => {
+		const method = await wpEval( `
+			$generator = new Happy_Order_Generator\\Generator();
+			$property  = new ReflectionProperty( $generator, 'available_payment_methods' );
+			$property->setAccessible( true );
+			$property->setValue( $generator, array( 'cheque' ) );
+			echo wp_json_encode( $generator->get_payment_method() );
+		` );
+		expect( JSON.parse( method ) ).toBe( '' );
+	} );
+
+	test( 'a subscription order with no supported gateway is skipped without an error', async () => {
+		const active = await wpEval( "echo class_exists( 'WC_Subscriptions' ) ? 'yes' : 'no';" );
+		test.skip( active !== 'yes', 'Woo Subscriptions is not active' );
+
+		// Without Stripe, Woo Subscriptions hides BACS for subscriptions unless manual renewals are accepted.
+		const subscriptionId = Number(
+			await wpEval( `
+				update_option( 'woocommerce_subscriptions_accept_manual_renewals', 'no' );
+				$p = get_page_by_path( 'hog-e2e-subscription', OBJECT, 'product' );
+				$x = $p ? wc_get_product( $p->ID ) : new WC_Product_Subscription();
+				$x->update_meta_data( '_subscription_price', '5' ); $x->update_meta_data( '_subscription_period', 'month' ); $x->update_meta_data( '_subscription_period_interval', '1' );
+				$x->set_name( 'hog-e2e-subscription' ); $x->set_slug( 'hog-e2e-subscription' ); $x->set_regular_price( '5' );
+				$x->set_virtual( true ); $x->set_status( 'publish' );
+				echo $x->save();
+			` )
+		);
+		await setSettings( { orders_per_hour: 6, products: [ String( subscriptionId ) ] } );
+		await clearDebugLog();
+
+		const before = await generatedOrderCount();
+		await runGeneratorBatch( 1 );
+		expect( await generatedOrderCount() ).toBe( before );
+
+		const issues = pluginPhpIssues( await readDebugLog() );
+		expect( issues, issues.join( '\n' ) ).toEqual( [] );
+	} );
+} );
+
+test.describe( 'Random product pool', () => {
+	const fixtures = [
+		{ slug: 'hog-e2e-draft', status: 'draft', stock: 'instock' },
+		{ slug: 'hog-e2e-private', status: 'private', stock: 'instock' },
+		{ slug: 'hog-e2e-out-of-stock', status: 'publish', stock: 'outofstock' },
+	];
+
+	test.beforeAll( async () => {
+		for ( const { slug, status, stock } of fixtures ) {
+			await wpEval( `
+				$p = get_posts( array( 'name' => '${ slug }', 'post_type' => 'product', 'post_status' => 'any', 'numberposts' => 1 ) );
+				$x = $p ? wc_get_product( $p[0]->ID ) : new WC_Product_Simple();
+				$x->set_name( '${ slug }' ); $x->set_slug( '${ slug }' ); $x->set_regular_price( '5' ); $x->set_virtual( true );
+				$x->set_status( '${ status }' ); $x->set_stock_status( '${ stock }' );
+				$x->save();
+			` );
+		}
+	} );
+
+	test.afterAll( async () => {
+		for ( const { slug } of fixtures ) {
+			await wpEval( `foreach ( get_posts( array( 'name' => '${ slug }', 'post_type' => 'product', 'post_status' => 'any', 'numberposts' => -1 ) ) as $p ) { wc_get_product( $p->ID )->delete( true ); }` );
+		}
+		await setSettings();
+	} );
+
+	test( 'leaves out unpublished and out-of-stock products', async () => {
+		await setSettings( { orders_per_hour: 6, products: [], min_order_products: 3, max_order_products: 3 } );
+
+		const picked = JSON.parse(
+			await wpEval( `
+				$seen = array();
+				for ( $i = 0; $i < 60; $i++ ) {
+					foreach ( ( new Happy_Order_Generator\\Product() )->get_random_product_ids() as $id ) { $seen[ $id ] = get_post_field( 'post_name', $id ); }
+				}
+				echo wp_json_encode( array_values( $seen ) );
+			` )
+		);
+		expect( picked ).toContain( 'hog-e2e-product' );
+		for ( const { slug } of fixtures ) {
+			expect( picked ).not.toContain( slug );
+		}
+	} );
 } );
