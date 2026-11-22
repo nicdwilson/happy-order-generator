@@ -15,6 +15,16 @@ const {
 	wpEval,
 } = require( './utils/wp' );
 
+/** Status and attribution of the most recent generated order. */
+async function latestGeneratedOrder() {
+	return JSON.parse(
+		await wpEval(
+			"$o = wc_get_orders( array( 'limit' => 1, 'orderby' => 'id', 'order' => 'DESC', 'meta_key' => '_happy_order_generator_order', 'meta_value' => 1 ) )[0];" +
+				"echo wp_json_encode( array( 'status' => $o->get_status(), 'source_type' => (string) $o->get_meta( '_wc_order_attribution_source_type' ), 'device_type' => (string) $o->get_meta( '_wc_order_attribution_device_type' ) ) );"
+		)
+	);
+}
+
 // Tests share one site and run in file order (workers: 1). A failure does not
 // skip the rest, matching how QIT reports every activation step.
 
@@ -41,6 +51,45 @@ test.describe( 'Order generation', () => {
 		expect( order.items ).toBeGreaterThan( 0 );
 		expect( order.ip ).not.toBe( '' );
 		expect( [ 'processing', 'completed' ] ).toContain( order.status );
+	} );
+
+	test( 'uses the saved order status percentages', async () => {
+		const productId = await productIdBySlug( 'hog-e2e-product' );
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ], order_completed_pct: 100, order_processing_pct: 0, order_failed_pct: 0 } );
+
+		await runGeneratorBatch( 1 );
+
+		expect( ( await latestGeneratedOrder() ).status ).toBe( 'completed' );
+	} );
+
+	test( 'adds order attribution data only when the setting is on', async () => {
+		const productId = await productIdBySlug( 'hog-e2e-product' );
+
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ], order_attribution: 'no' } );
+		await runGeneratorBatch( 1 );
+		expect( ( await latestGeneratedOrder() ).source_type ).toBe( '' );
+
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ], order_attribution: 'yes' } );
+		await runGeneratorBatch( 1 );
+		const order = await latestGeneratedOrder();
+		expect( [ 'organic', 'referral', 'utm', 'typein', 'admin' ] ).toContain( order.source_type );
+		expect( [ 'Desktop', 'Mobile', 'Tablet' ] ).toContain( order.device_type );
+	} );
+
+	test( 'debug logging records the order without dumping cart, checkout or payment data', async () => {
+		const logs = "glob( trailingslashit( WC_LOG_DIR ) . 'happy-order-generator-*.log' )";
+		await wpEval( `foreach ( ${ logs } as $f ) { unlink( $f ); }` );
+
+		const productId = await productIdBySlug( 'hog-e2e-product' );
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ], enable_debug: 'yes' } );
+		await runGeneratorBatch( 1 );
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ] } );
+
+		const log = await wpEval( `$out = ''; foreach ( ${ logs } as $f ) { $out .= file_get_contents( $f ); } echo $out;` );
+		expect( log ).toMatch( /Order ID \d+ created for customer ID \d+ paid with bacs/ );
+		for ( const dump of [ 'Payment data prepared', 'Add to cart response', 'Checkout response', 'payment_methods', 'billing_address' ] ) {
+			expect( log, dump ).not.toContain( dump );
+		}
 	} );
 
 	test( 'generation raised no PHP notices, warnings or errors', async () => {

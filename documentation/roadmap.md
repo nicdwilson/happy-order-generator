@@ -1,0 +1,252 @@
+# Happy Order Generator — Release Roadmap
+
+Goal: take the `add-product-bundles-support` work to a clean, tested release, bring the codebase up to WordPress/WooCommerce standards, and scope a WooPayments gateway integration that mirrors the existing Stripe integration.
+
+Suggested release target: **v1.1.0** (bundles + refactor + fixes), with the WooPayments integration as **v1.2.0**.
+
+---
+
+## Branching & release workflow
+
+Decided June 2026:
+
+- `main` is the **stable/release** branch. `dev` is the **integration** branch (currently identical to `main`).
+- Each Phase 1 bug that exists on `dev`/`main` gets its own `fix/<slug>` branch **off `dev`**, fixed in its own PR, reviewed, and merged to `dev`.
+- When a release is ready (end of Phase 4/5), a single release PR merges `dev` → `main`, which is then tagged (`v1.1.0`).
+- `add-product-bundles-support` is **parked**: no further work on it until the bundles integration resumes (Phase 2). When it resumes, rebase it onto `dev` so it picks up the merged bug fixes — expect a manual merge in `class-logger.php` (rewritten on the branch) and `class-generator.php`.
+- Bugs that only exist in the branch's new code (1.2, 1.6, branch-only parts of 1.8) are fixed **on the bundles branch** when work resumes, not via `dev` fix branches.
+
+(For reference: WooCommerce core itself uses trunk-based development — short-lived branches PR'd straight to `trunk`, with release branches cut per version. Either model is acceptable; the dev/main split above adds a staging buffer which suits a plugin with manual QA phases. The non-negotiables are the same in both: one concern per PR, CI green before merge, protected release branch.)
+
+## Phase 0 — Branch hygiene
+
+- [x] Commit the untracked `includes/class-http-client.php` and `includes/class-cart-handler.php` plus the pending modifications so the refactor is captured as a coherent commit. *(Done: `de5530c` on `add-product-bundles-support`, marked WIP.)*
+- [x] **Deferred to Phase 2 (now a Phase 2 task):** strip or downgrade the temporary diagnostic logging added while debugging (e.g. `print_r` dumps of full cart/checkout responses in `class-generator.php` and `class-order-builder.php`). Keep structured `Logger::info/warning/error` calls; drop the noisy step-by-step traces.
+- [x] ~~**Deferred to Phase 2 resumption:** rebase onto `dev` and squash the "debugging" commits (`e74a9dc`, etc.) into meaningful history before PR.~~ *Not needed: the branch has been kept up to date with merge commits, so its history stays as it is.*
+
+## Phase 1 — Bug fixes
+
+Ordered roughly by severity. Each item should land with a unit test where practical (see Phase 4).
+
+**Status (June 2026):** all five pre-existing `dev`-track bugs (1.1, 1.3, 1.4, 1.5, 1.7) are fixed and merged to `dev`. The remaining items (1.2, 1.6, and the branch-only parts of 1.8) are deferred to the bundles branch on Phase 2 resumption.
+
+**Where each bug lives** (verified against `main`):
+
+| Bug | Exists on `dev`/`main`? | Fix via | Status |
+|---|---|---|---|
+| 1.1 Settings key mismatch | Yes (pre-existing) | `fix/settings-option-key` off `dev` | ✅ merged (#3) |
+| 1.2 Wrong `bundled_item_id` | No — branch-only code | Bundles branch, on resumption | ⬜ deferred to Phase 2 |
+| 1.3 `log_customer_in()` reads `$_POST` | Yes (pre-existing) | `fix/store-api-customer-login` off `dev` | ✅ merged (#4) |
+| 1.4 Logger `WP_Error` fatal + unguarded setting | Yes (pre-existing; branch has a rewritten Logger with the same `get_all_error_messages()` bug — fix both) | `fix/logger-wp-error` off `dev`, re-apply on branch rebase | ✅ merged (#5); re-apply on branch rebase |
+| 1.5 Scheduler `=` vs `==` | Yes (pre-existing) | `fix/scheduler-interval-check` off `dev` | ✅ merged (#6) |
+| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption | ✅ fixed on bundles branch |
+| 1.7 `subscription_variation` not detected | Yes (pre-existing) | `fix/subscription-variation-detection` off `dev` | ✅ merged (#7) |
+| 1.8 Smaller items | Mixed — text domain, dead `check()`/`admin_notices()` are on `dev`; `Order_Builder` leftovers are branch-only | Split accordingly | ⬜ pending (dev-side parts open) |
+
+### 1.1 Settings option key mismatch (high — wrong runtime config)
+- `Generator::__construct()` (`includes/class-generator.php:63`) reads `wc_order_generator_settings`, but the settings page saves to `happy_order_generator_settings` (`includes/admin/class-wc-settings-order-generator.php:310`). The status-percentage settings the Generator uses are therefore stale or empty.
+- `Cron_Jobs::setup_action_scheduler()` also writes its computed `batch_size`/`interval` back to `wc_order_generator_settings` (`includes/class-cron-jobs.php:86`) while reading from `Order_Generator::get_settings()`.
+- **Fix:** all reads go through `Order_Generator::get_settings()`; store scheduler state (batch size / interval) in its own option (e.g. `hog_scheduler_state`) instead of mixing it into user settings. Delete the orphaned `wc_order_generator_settings` option on upgrade.
+
+### 1.2 Bundle configuration uses the wrong ID (high — likely root cause of bundle checkout failures)
+- `Product::generate_bundle_configuration()` sets `bundled_item_id` to `$bundled_item->get_product_id()` (`includes/class-product.php:342`). The Product Bundles Store API expects the **bundled item ID** (the key/row ID, i.e. `$bundled_item->get_id()` / the `$bundled_item_id` array key), not the product ID.
+- **Fix:** use the bundled item ID; verify the payload shape against the Product Bundles Store API documentation/source. This is the first thing to test once fixed — it plausibly explains the order-creation failures the recent debug commits were chasing.
+
+### 1.3 `log_customer_in()` reads `$_POST` for a JSON request (high — customer never logged in)
+- `woocommerce-order-generator.php:133` reads `$_POST['billing_address']['email']`, but Store API checkout requests are JSON bodies, so `$_POST` is empty (and the code would notice-fail on the missing index).
+- **Fix:** use the `$request` parameter provided by the `woocommerce_store_api_checkout_update_customer_from_request` hook: `$request['billing_address']['email']` (with isset guard).
+
+### 1.4 Logger fatals when logging a `WP_Error` (medium)
+- `Logger::log()` calls `$message->get_all_error_messages()` (`includes/class-logger.php:48`) — that method does not exist on `WP_Error` (it's `get_error_messages()`), so logging an error object fatals exactly when something has already gone wrong.
+- Also `includes/class-logger.php:37` reads `$settings['enable_debug']` without an `isset()` guard — warnings on fresh installs where settings were never saved.
+- **Fix:** correct the method name, guard the setting with a default of `'no'`.
+
+### 1.5 Assignment instead of comparison in scheduler check (medium)
+- `includes/class-cron-jobs.php:73`: `$this->settings['interval'] = $interval_in_seconds` inside the `if` condition should be `==`/`===`. As written, the "leave the existing scheduled action alone" short-circuit misbehaves and the action is rescheduled more often than intended.
+
+### 1.6 `HTTP_Client` typed-property pitfalls (medium)
+- `private string $nonce` is read in `build_request_args()` (`includes/class-http-client.php:152`) before initialization if `authenticate()` was never called → `Error: typed property accessed before initialization`.
+- `clear_authentication()` assigns `null` to the non-nullable `string $nonce` → `TypeError`.
+- **Fix:** declare `private ?string $nonce = null`.
+
+### 1.7 Subscription detection misses variable-subscription carts (low)
+- `Generator::check_cart_for_subscription()` (`includes/class-generator.php:239`) checks product types `subscription` and `variable-subscription`, but cart items for variable subscriptions carry the **variation** ID, whose type is `subscription_variation`. Such carts can be routed to BACS, creating manual renewals.
+- **Fix:** include `subscription_variation`, and guard against `wc_get_product()` returning `false`.
+
+### 1.8 Smaller items (low)
+- `includes/class-product.php:333`: duplicated assignment `$include_item = $include_item = rand( 0, 1 );`.
+- `Generator::generate_order()` constructs `Order_Builder` which can throw (nonce failure) — wrap in try/catch and return `false` cleanly instead of letting the exception bubble to Action Scheduler.
+- `Order_Builder` retains unused `$cookies` property and leftover state from before the refactor.
+- `Order_Generator::check()` and `admin_notices()` exist but are never invoked — wire up the version checks on `plugins_loaded` + `admin_notices`, or remove them.
+- Wrong text domain in `woocommerce-order-generator.php:160` (`'Happy Order Generator'` instead of `'happy-order-generator'`).
+
+## Phase 1.5 — Generation enhancements
+
+Two small, self-contained feature requests that improve the generated data and its cleanup. Both target **v1.1.0** and follow the same workflow as Phase 1: one `feat/<slug>` branch off `dev`, one PR each, with a unit test where practical.
+
+### 1.5.1 Mark generated users with identifying meta ([#1](https://github.com/nicdwilson/happy-order-generator/issues/1))
+- Generated orders already carry `_happy_order_generator_order = 1` (`includes/class-generator.php` / `Order_Builder`), which lets a site purge generated orders. Users created by the plugin have no equivalent marker, so generated customers can't be cleanly identified or removed.
+- **Fix:** when `Customer` creates a new user, write a `_happy_order_generator_user` (value `1`) user meta. Mirror the order-meta convention exactly so the two are symmetrical.
+- Wire it into the Phase 3 `uninstall.php` cleanup (delete generated users behind the same opt-in constant that gates generated-order deletion), and document the meta key alongside the existing `_happy_order_generator_order` tip in the `readme.txt` FAQ.
+- **Branch:** `feat/generated-user-meta` off `dev`.
+- **Superseded (November 2026):** `main` (#14) marks generated customers with `_happy_order_generator_customer` instead, plus a no-capability `hog_generated_customer` role, and uses the meta to keep the checkout login and customer reuse to generated customers only. When `main` was merged into `dev`, `_happy_order_generator_user` was dropped in favour of that key. It was never released.
+
+### 1.5.2 Add order attribution data to generated orders ([#2](https://github.com/nicdwilson/happy-order-generator/issues/2))
+- WooCommerce records **Order Attribution** (source type, referrer, UTM params, device, session data) via the Order Attribution feature, stored as `_wc_order_attribution_*` order meta. Generated orders currently have none, so attribution reports treat them as `(none)`/unknown — less realistic test data.
+- **Fix:** after checkout, set a plausible spread of `_wc_order_attribution_*` meta on generated orders (e.g. randomly distribute across `organic`, `referral`, `typein`, `utm`, `admin`), behind a setting so it can be toggled off. Reuse WooCommerce's documented meta keys rather than inventing our own; verify against the `WC_Order_Attribution` source for the pinned WC version.
+- Add the distribution to the settings page (Phase 3 `Settings` class) and cover the mapping with a unit test in Phase 4.
+- **Note:** the stale `feat/add-order-attribution-data` branch is an old pointer behind `dev` with no unique commits — start fresh from `dev` (or hard-reset it) rather than building on it.
+- **Branch:** `feat/order-attribution-data` off `dev`.
+
+## Phase 2 — Finalize the Product Bundles integration
+
+### History — why the cart setup was split (recorded June 2026)
+
+The original cart code added all products through the Store API `/batch` endpoint. During bundle development we found that the bundle metadata (`bundle_configuration`) was not reaching Product Bundles in a readable format: bundles need the payload submitted as JSON, which Product Bundles handles correctly on a direct request, but when the same request goes through `/batch`, core WordPress's batch handling (`WP_REST_Server::serve_batch_request_v1()`) re-encodes the nested structure as array-style POST parameters, which Product Bundles cannot parse. This is what led to the split cart setup on the `add-product-bundles-support` branch — bundles via individual `/cart/add-item` POSTs, regular products still via `/batch` — which is admittedly messier than the original single-batch design. When resuming this phase, either keep the split (and document it as a WP-core limitation), simplify to single requests for *everything* (at the cost of one HTTP round trip per item), or investigate whether the batch handling has since been fixed upstream.
+
+**Checked November 2026 (WordPress 7.1.5, Product Bundles 8.5.17):** core's batch handling is unchanged, but it isn't the root cause. `serve_batch_request_v1()` passes the sub-request body through `set_body_params()`, and `bundle_configuration` arrives there intact, nested arrays and all. Product Bundles reads it only via `get_json_params()` (`WC_PB_Cart::handle_store_api_add_to_cart_request()`), which is empty inside a batch. So the configuration is ignored, and the bundle is added with its defaults and a 201, even for an invalid configuration. A test shim that gave the batched sub-request a JSON body made the same batch work fully: the chosen quantities and optional items were applied, and invalid IDs were rejected. **Decision for now:** keep the split. **Upstream:** ask Product Bundles to read `get_param( 'bundle_configuration' )`. Once that ships, bundles can go back into the single batch.
+
+### Tasks
+
+Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required items, optional items, quantity ranges) already reach checkout. Suggested order: the configuration tasks together in one PR (same function, same tests), then the order-flow tasks, then the cleanup.
+
+- [x] Land fix 1.2 (correct `bundled_item_id`) and verify a simple bundle reaches checkout end-to-end via the Store API. *(Done: `tests/e2e/tests/bundles.spec.js`.)*
+
+**Generate valid configurations for every kind of bundle** (`Product::generate_bundle_configuration()`)
+
+- [x] Re-enable the commented-out **variable products inside bundles** block in `Product::generate_bundle_configuration()`; confirm the expected keys (`variation_id`, `attributes` with `name`/`option`) against the Product Bundles Store API contract, and reuse the existing "Any attribute" fallback logic from the variation handling above it.
+  - **Product Bundles 8.6.0+ simplifies this** (checked against 8.7.0). `WC_PB_Cart::complete_variation_attributes()` fills in a chosen variation's fixed attributes, on add to cart and when building order configurations. So a bundled variable item can be sent with just `variation_id`, plus `attributes` rows (`name`/`option`) only for attributes the variation leaves as "Any". Pick the variation from `WC_Bundled_Item::get_product_variations()`, which respects the bundle's allowed-variations filter. Earlier versions need every attribute sent explicitly, so either require Product Bundles 8.6.0, or send all attributes to stay compatible with older versions.
+  - *Done: sends every attribute, so no minimum Product Bundles version is needed.*
+- [x] Respect the bundle-level **min/max item limits** from the Min/Max Items module (`_wcpb_min_qty_limit` / `_wcpb_max_qty_limit`). Random optional picks can currently fall outside them and be rejected.
+- [x] Handle bundled items with **no maximum quantity**: `get_quantity( 'max' )` returns `''`, so the generator always uses the minimum. Pick from a sensible range instead.
+- [x] Respect **stock and purchasability**: skip out-of-stock optional items, and skip bundles that fail `is_purchasable()` / `is_in_stock()` or have an out-of-stock required item. Today such a bundle fails the whole order at add to cart.
+
+**Make the rest of the order flow bundle-aware**
+
+- [x] **Subscriptions inside bundles:** `Generator::check_cart_for_subscription()` only checks top-level products, so a bundle containing a subscription isn't detected and a gateway that can't renew it (BACS) can be chosen. Check bundled items too. Also fix the `variable_subscription` type string in `Product::$product_types` (should be `variable-subscription`).
+  - *Found November 2026, on `main` too:* `Generator::get_payment_method()` checks `isset( $hog_payment_methods['stripe'] )`, but Stripe is added to that list as a value, not a key, so subscription orders never prefer Stripe. *Fixed on `main` (#25).*
+- [x] Decide and document behaviour when Product Bundles is **not** active: `bundle` type is already removed from `$product_types`; add a settings-page notice if the admin has explicitly selected a bundle product that can't be used.
+
+**Clean up the refactor before it reaches `main`**
+
+- [x] Fix **1.6** (`HTTP_Client`): declare `private ?string $nonce = null`.
+- [x] Cut the **logging** back to failures and key steps (the deferred Phase 0 item). `Generator` logs `print_r( $options )`, which includes Stripe payment data, and the full add-to-cart response; `Order_Builder` logs the full checkout response; `Cart_Handler` logs every step.
+- [x] Use or remove the **unused methods** left by the refactor: `Cart_Handler::clear_cart()` and `get_payment_methods()`, `Order_Builder::refresh_nonce()`. *(Done: removed, along with the other unused `HTTP_Client`, `Order_Builder`, `Product` and `Logger` methods.)*
+- [x] Confirm the single-request-vs-batch routing comment in `Cart_Handler` reflects the final behaviour. *(Done: corrected with the November 2026 batch finding.)*
+
+**Tests**
+
+- [x] Add bundle E2E cases for: variable bundled items, bundle min/max limits, out-of-stock bundled items, a subscription inside a bundle (if supported), and bundles in the **random** product pool (not only when selected in settings). *The random-pool test found two bugs, fixed on `main` (#29): unbuyable products were picked, and a cart with no supported gateway was a fatal error.*
+- [ ] Decide how bundle tests run in CI. Product Bundles is licensed, so `bundles.spec.js` currently skips in CI and runs locally only (see `tests/README.md`). *(Parked November 2026.)*
+
+**Ship it**
+
+- [ ] **Upstream (optional):** ask Product Bundles to read `get_param( 'bundle_configuration' )`, which fixes the silent batch acceptance and lets bundles go back into the single batch.
+- [x] Add changelog, README and `readme.txt` entries for bundle support, including "Tested with Product Bundles 8.7".
+- [ ] Merge the bundles branch into `dev` (merge commit), then `dev` into `main` once E2E passes with bundles in the random product pool. This also brings the bundles-branch Logger `get_error_code()` fix to `dev`/`main`.
+
+## Phase 3 — Code standards & hardening
+
+### Tooling
+- [ ] Add **PHPCS** with the `WooCommerce-Core` (or `WordPress` + WooCommerce) ruleset; `composer lint` / `composer lint:fix` scripts; fix violations (escaping, sanitization, yoda conditions, `wp_rand()` instead of `rand()`/`mt_rand()`, i18n).
+- [ ] Add **PHPStan** (level 5–6) with `php-stubs/wordpress-stubs` and `php-stubs/woocommerce-stubs`; this would have caught 1.4, 1.6, and the `WP_Error` method typo class of bugs.
+- [ ] Add a basic **GitHub Actions** workflow: lint + static analysis + unit tests on PHP 8.1/8.2/8.3.
+
+### Structure & consistency
+- [ ] Introduce a small `Settings` class with typed getters and defaults (`get_orders_per_hour(): int`, `is_debug_enabled(): bool`, …) so the scattered `isset()` checks disappear and the option key lives in one place (fixes the class of bug in 1.1 permanently).
+- [ ] Resolve the singleton inconsistency: `Product`, `Customer`, `Generator` define `instance()` but are also instantiated with `new` (and `class-product.php:398` calls `Product::instance()` at file load for no clear reason). Pick plain instantiation (preferred — these are per-order objects) and delete the singleton scaffolding.
+- [ ] Replace the remaining `todo` markers: the Stripe-specific block in `Order_Builder::do_checkout()` (`includes/class-order-builder.php:226-269`) should become a filter (e.g. `hog_checkout_payment_data`) that gateway integrations hook — this is also the seam the WooPayments integration needs (Phase 6).
+- [ ] Reconsider `sleep( 5 )` between orders in `Cron_Jobs::create_orders()` — it blocks an Action Scheduler worker for the whole batch. Prefer scheduling N single actions per interval instead of one batch action with sleeps.
+
+### Plugin housekeeping
+- [ ] Update the plugin header: real version number (`1.1.0`), `Requires at least`, `Requires PHP`, `Requires Plugins: woocommerce`, current `Tested up to` / `WC tested up to` values (header still says WP 6.2 / WC 7.7).
+- [ ] Implement `Installer::deactivate_plugin()` → `as_unschedule_all_actions( 'create_happy_orders' )`; add `uninstall.php` to delete both options and (optionally, behind a constant) generated test data.
+- [ ] Add `readme.txt` with description, FAQ (including the `_happy_order_generator_order` meta cleanup tip), and changelog.
+- [ ] Document all public hooks/filters in `documentation/` (the list in `project-description.md` is the starting point); decide on one prefix (`hog_` vs `order_generator_`) and deprecate the other consistently.
+
+## Phase 4 — Testing
+
+### Unit / integration tests (PHPUnit)
+- [ ] Set up `wp-env` + the WP test suite (`WP_UnitTestCase`) with WooCommerce loaded; add WooCommerce's helper factories for products/orders.
+- Priority targets (pure logic, no HTTP):
+  - [ ] `Product::get_cart_products()` — simple, variable (including "Any" attribute resolution), and bundle payload shapes.
+  - [ ] `Product::generate_bundle_configuration()` — required vs optional items, quantity min/max, variable bundled items (needs Product Bundles in the test env or a thin wrapper interface that can be mocked).
+  - [ ] `Generator::get_final_status()` — distribution respects configured percentages (seedable randomness: wrap `wp_rand()` so tests can inject values).
+  - [ ] `WC_Settings_Order_Generator_Settings::save()` — percentage auto-balancing to 100, min/max product clamping, orders-per-hour cap.
+  - [ ] `Cron_Jobs` interval and batch-size math (1/hour → 3600s, 60/hour → 60s batch 1, 120/hour → batch 2).
+  - [ ] `Logger` — WP_Error handling, debug gating, context serialization.
+- [ ] For `HTTP_Client` / `Cart_Handler` / `Order_Builder`: intercept requests with the `pre_http_request` filter to return canned Store API responses — test retry/backoff, nonce expiry (404 path), bundle-vs-batch routing, and checkout error mapping without a live loopback.
+
+### End-to-end tests
+- [ ] `wp-env` (or WordPress Playground blueprint) provisioning: WooCommerce + sample products + Product Bundles + the plugin, with settings pre-seeded.
+- [ ] Driver: Playwright for admin-facing checks, WP-CLI for triggering generation deterministically (`wp action-scheduler run --hooks=create_happy_orders` or invoking the hook directly) instead of waiting on real cron.
+- Scenarios:
+  - [ ] Settings page saves and round-trips every field.
+  - [ ] With orders-per-hour set, a scheduled action exists; running it creates an order with `_happy_order_generator_order = 1`, an order note, and a fake customer IP.
+  - [ ] Generated orders land in the configured status mix (smoke check, not exact distribution).
+  - [ ] Bundle product order contains the parent bundle line item plus bundled child line items.
+  - [ ] Variable product order has correct variation attributes.
+  - [ ] New-customer mode creates users with the configured naming/email convention and locale.
+  - [ ] Subscriptions (with Woo Subscriptions + Stripe test mode): subscription is active with a saved payment token. *Requires Stripe test keys as CI secrets — mark as a nightly/optional job rather than per-PR.*
+- [ ] CI: per-PR job runs lint + unit + non-gateway e2e; nightly job runs the gateway e2e suite.
+
+## Phase 5 — Release
+
+- [ ] Version bump to `1.1.0`, changelog, tag, build a distributable zip (exclude `.idea`, `documentation/`, tests, dev deps via `.distignore`).
+- [ ] Manual QA matrix: PHP 8.1/8.3 × WC latest/L-2 × HPOS on/off × (Subscriptions, Product Bundles, Stripe) present/absent.
+- [ ] Run the pre-release review skills: code review, upgrade-safety check (option key migration from 1.1 matters here), and a final code-health pass.
+
+---
+
+## Phase 6 — WooPayments gateway integration (v1.2.0)
+
+Mirror the architecture of `Gateway_Integration_Stripe`: a self-contained class that opts the gateway in via filters, supplies checkout `payment_data`, simulates failures with test cards, and leaves subscriptions renewable.
+
+### 6.0 Prerequisite refactor
+- [ ] Extract an `Abstract_Gateway_Integration` (or interface) from the Stripe class capturing the contract: `add_gateway_support( array ): array`, `get_payment_data( $user_id, $final_status ): array`, failure-handling hooks. Move the Stripe-specific `payment_data` block out of `Order_Builder::do_checkout()` behind a `hog_checkout_payment_data` filter (Phase 3 item) so each integration owns its own checkout payload.
+
+### 6.1 Detection and gating (mirrors `add_stripe_support()`)
+- [ ] Hook `order_generator_supported_gateways`; add `woocommerce_payments` only when **all** of:
+  - WooPayments plugin active (`class_exists( 'WC_Payments' )` and `is_plugin_active( 'woocommerce-payments/woocommerce-payments.php' )`),
+  - the gateway is in WooCommerce's available gateways list,
+  - the account is connected, and
+  - **test mode is enabled** (`WC_Payments::mode()->is_test()`); never generate against a live account — same hard rule as Stripe.
+
+### 6.2 API access (the key difference from Stripe — needs a spike first)
+The Stripe integration talks to Stripe's API directly via `WC_Stripe_API::request()` with raw test card numbers. WooPayments proxies all API traffic through Automattic's platform (`WC_Payments_API_Client`), and **raw card numbers cannot be tokenized server-side** — tokenization normally happens client-side.
+
+- [ ] **Spike (timeboxed):** confirm what `WC_Payments_API_Client` exposes for server-side use in test mode. Expected approach:
+  - Customer: reuse `WC_Payments_Customer_Service` (`create_customer_for_user()` / `get_customer_id_by_user_id()`), which stores the customer ID in user meta (test-mode key is separate from live).
+  - Payment method: in test mode, use Stripe's **predefined test payment-method tokens** (`pm_card_visa` for success; `pm_card_chargeDeclined`, `pm_card_chargeDeclinedInsufficientFunds`, etc. for failures) attached to the customer, instead of creating payment methods from raw card numbers. This replaces the Stripe class's `$test_card_fails` array of card numbers with a map of failing `pm_` tokens.
+  - Intent: `create_and_confirm_intention()` (or the request-class equivalent in current WooPayments) with `metadata` marking the order as generated, mirroring `setup_payment_intent()`.
+- [ ] Document spike findings in `documentation/woopayments-integration.md` before implementation; if server-side attachment of test tokens is blocked by the proxy, fall back to driving the Store API checkout with `payment_data` only and letting WooPayments' own checkout processing create the intent.
+
+### 6.3 Checkout payload (mirrors the Stripe `payment_data` block)
+- [ ] Provide Store API `payment_data` entries for the WooPayments gateway — at minimum `wcpay-payment-method` (the `pm_…` ID) plus the save-payment-method flag (`wc-woocommerce_payments-new-payment-method => true`) so subscriptions get a saved method. Verify exact keys against WooPayments' `WC_Payments_Checkout`/Store API handling for the pinned WooPayments version, and pin a minimum supported WooPayments version in the integration's gating check.
+
+### 6.4 Failure simulation (mirrors `do_failure_check()` / `do_checkout_fail()`)
+- [ ] Intercept `woocommerce_rest_checkout_process_payment_with_context` when `final_status !== 'paid'`, set the payment result to pending, then on `order_generator_order_failed` confirm an intent with a declining test token and write the gateway error code/message into an order note — same UX as the Stripe failure notes.
+
+### 6.5 Subscriptions
+- [ ] On successful subscription orders, save a `WC_Payment_Token_CC` with `gateway_id = 'woocommerce_payments'` and the test payment method details, and ensure the WooPayments customer/payment-method meta is on the subscription so renewals work (mirrors `pay_generated_order()`'s token block). Cover both Woo Subscriptions and WooPayments' built-in subscriptions, or explicitly scope to Woo Subscriptions for v1.2.0.
+
+### 6.6 Selection logic and tests
+- [ ] Update `Generator::get_payment_method()` so subscription-containing carts can prefer either Stripe or WooPayments (currently hardcoded to prefer `stripe`); make the preference filterable.
+- [ ] Unit tests against a mocked API client; e2e nightly job with a connected test-mode WooPayments dev account (provisioning this sandbox account is a task in itself — flag it early).
+
+### Risks / unknowns
+- WooPayments' server-side API surface is not a stable public contract; releases can rename request classes. Mitigate by pinning a minimum version and feature-detecting before opting in.
+- Test-token availability through the WCPay proxy is the main feasibility question — hence the spike before committing to the v1.2.0 scope.
+
+---
+
+## Suggested sequencing
+
+| Milestone | Contents | Size |
+|---|---|---|
+| 1 | Phase 0 + Phase 1 (bugs) ✅ dev-track bugs merged | S–M |
+| 2 | Phase 1.5 (generation enhancements: #1, #2) | S |
+| 3 | Phase 2 (bundles complete, PR merged) | M |
+| 4 | Phase 3 (standards, tooling) + Phase 4 unit tests | M–L |
+| 5 | Phase 4 e2e + CI, then Phase 5 release v1.1.0 | M |
+| 6 | Phase 6 spike → WooPayments integration → v1.2.0 | L |

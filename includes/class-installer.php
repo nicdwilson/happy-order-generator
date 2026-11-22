@@ -47,6 +47,14 @@ namespace Happy_Order_Generator;
 	 }
 
      public static function activate_plugin():void{
+
+         /**
+          * Remove the orphaned option written by older versions that saved
+          * scheduler state to the wrong key. Settings now live in
+          * happy_order_generator_settings and scheduler state in hog_scheduler_state.
+          */
+         delete_option( 'wc_order_generator_settings' );
+
 		Customer::ensure_role();
     }
 }

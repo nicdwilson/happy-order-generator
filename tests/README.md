@@ -50,6 +50,30 @@ WordPress container. `hog-e2e-mail-log.php` records outgoing mail in the
 `hog_e2e_mail_log` option instead of sending it, for `customer-emails.spec.js`,
 which skips without it. None of this is shipped or used under QIT.
 
+### Product Bundles tests
+
+`tests/bundles.spec.js` covers required and optional items, quantity ranges
+(including no maximum), variable bundled items, bundle min/max item limits
+and out-of-stock items, subscriptions inside bundles, bundles picked from the
+random product pool, and the settings notice
+for bundles selected while Product Bundles is inactive. It needs Product
+Bundles, a licensed extension, so it skips when Product Bundles isn't active
+(as in CI), except for the inactive-Product-Bundles notice test, which always
+runs. The subscription test also needs Woo Subscriptions; mount it the same way. To run it locally, mount
+your copy with a `tests/e2e/.wp-env.override.json` file (gitignored):
+
+```json
+{
+	"plugins": [
+		"https://downloads.wordpress.org/plugin/woocommerce.latest-stable.zip",
+		"../..",
+		"/path/to/woocommerce-product-bundles"
+	]
+}
+```
+
+Then restart with `npm run env:start`.
+
 ### Known failures
 
 There are none at the moment. When a test exposes a bug that isn't fixed

@@ -5,8 +5,14 @@ xxxx-xx-xx - version x.x.x
 * Add - Warning on admin screens for administrators and shop managers while orders are being generated, showing the hourly rate. It can be dismissed until the next login.
 * Add - Generated customers get the "Generated customer (Happy Order Generator)" role, which has no capabilities, and the _happy_order_generator_customer user meta.
 * Add - "Requires at least", "Requires PHP" and "Requires Plugins" headers, readme.txt and changelog.txt.
+* Add - Order attribution setting: generated orders can get plausible WooCommerce order attribution data (source, referrer, device) so they appear in attribution reports.
 * Add - QIT-equivalent test suite (validation, compatibility, PHPStan, security, audit and Playwright E2E) and GitHub Actions CI.
+* Add - WooCommerce Product Bundles support. Bundles can be selected in the settings or picked at random, and each order gets a random configuration that Product Bundles accepts: required items are always included, optional items at random, quantities within each item's range (up to 2 above the minimum when there is no maximum), a variation for variable bundled items, and the bundle's min/max item limits. Tested with Product Bundles 8.7.
+* Add - The settings page names any selected bundles that can't be used because Product Bundles isn't active.
 * Add - WooCommerce emails for generated customers go to hog-customer@ the site's domain, or an address set in the settings, instead of the customer's address. They can also be blocked.
+* Tweak - Bundles that can't be bought (not purchasable, out of stock, or with an out-of-stock required item) are left out of the order instead of failing it. Out-of-stock optional items are left out of the bundle.
+* Tweak - A subscription inside a bundle makes the order a subscription order, so it uses Stripe when available.
+* Tweak - Cart requests that fail are tried up to three times in all, with a growing delay between tries. Checkout isn't retried, so an order is never placed twice.
 * Tweak - Order generation only runs on sites whose environment type is local, development or staging. Change the allowed types with the hog_allowed_environment_types filter.
 * Tweak - Only customers created by the generator are reused for new orders. Real customers are never used.
 * Tweak - Tested up to WordPress 7.1 and WooCommerce 11.3.
@@ -21,6 +27,9 @@ xxxx-xx-xx - version x.x.x
 * Fix - PHP warnings when saving the settings with Enable logging unticked, and when logging on sites that have never saved the settings.
 * Fix - Settings save now verifies the nonce and capability, and sanitizes every value.
 * Fix - Possible division by zero in the order schedule.
+* Fix - The generator read the wrong settings option, so order status percentages could be stale. Scheduler state now has its own option, and the orphaned wc_order_generator_settings option is removed on activation.
+* Fix - The scheduler check used an assignment instead of a comparison, so the schedule could be rebuilt unnecessarily.
+* Fix - Variable subscription variations in the cart weren't recognised as subscriptions.
 
 2024-01-10 - version 1.0.1
 * Fix - Check that removes non-English locales.
