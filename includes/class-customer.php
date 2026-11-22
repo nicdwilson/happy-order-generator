@@ -126,11 +126,14 @@ class Customer {
 		$last_name      = $this->get_customer_lastname( $faker, $user_id );
 		$customer_email = $this->get_customer_email( $faker, $user_id );
 
+		// Changing the address would email the made-up one it was created with.
+		add_filter( 'send_email_change_email', '__return_false' );
 		wp_update_user( array(
 			'ID'         => $user_id,
 			'last_name'  => $last_name,
 			'user_email' => $customer_email
 		) );
+		remove_filter( 'send_email_change_email', '__return_false' );
 
 		// billing/shipping address
 		$meta = array(
