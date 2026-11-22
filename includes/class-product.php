@@ -271,10 +271,13 @@ class Product {
 	public function get_random_product_ids(): array {
 
 		$args = array(
-			'type'    => $this->product_types,
-			'limit'   => $this->number_of_products,
-			'orderby' => 'rand',
-			'return'  => 'ids'
+			'type'         => $this->product_types,
+			'limit'        => $this->number_of_products,
+			'orderby'      => 'rand',
+			'return'       => 'ids',
+			// Only products a customer could buy.
+			'status'       => 'publish',
+			'stock_status' => array( 'instock', 'onbackorder' ),
 		);
 
 		return wc_get_products( $args );
