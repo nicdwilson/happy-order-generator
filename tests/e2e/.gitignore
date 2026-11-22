@@ -4,3 +4,5 @@ test-results/
 playwright-report/
 bootstrap/wp-env-mu-plugins/hog-e2e-no-background-queue.php
 bootstrap/wp-env-mu-plugins/hog-e2e-production.php
+# Local plugin mounts (licensed plugins, local paths). See tests/README.md.
+.wp-env.override.json
