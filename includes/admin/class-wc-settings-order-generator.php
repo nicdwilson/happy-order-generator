@@ -227,6 +227,31 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 				'desc_tip' => true,
 			),
 			array(
+				'title'    => __( 'Customer emails', 'happy-order-generator' ),
+				'desc'     => __( 'What happens to WooCommerce emails for generated customers, such as order confirmations. Emails for real customers and store staff aren\'t affected.', 'happy-order-generator' ),
+				'id'       => 'hog_customer_emails',
+				'type'     => 'select',
+				'value'    => Customer_Emails::get_mode(),
+				'options'  => array(
+					Customer_Emails::REDIRECT => __( 'Send them to one address', 'happy-order-generator' ),
+					Customer_Emails::BLOCK    => __( 'Don\'t send them', 'happy-order-generator' ),
+				),
+				'desc_tip' => true,
+			),
+			array(
+				'title'       => __( 'Send customer emails to', 'happy-order-generator' ),
+				'desc'        => sprintf(
+					/* translators: %s: the default address, e.g. hog-customer@example.com */
+					__( 'Used when customer emails are sent to one address. Leave empty to use %s.', 'happy-order-generator' ),
+					Customer_Emails::get_default_address()
+				),
+				'id'          => 'hog_customer_email_address',
+				'type'        => 'email',
+				'value'       => (string) ( $settings['customer_email_address'] ?? '' ),
+				'placeholder' => Customer_Emails::get_default_address(),
+				'desc_tip'    => true,
+			),
+			array(
 				'title'             => __( 'Completed Order Status Chance', 'happy-order-generator' ),
 				'desc_tip'          => false,
 				'id'                => 'hog_order_completed_pct',
@@ -342,7 +367,21 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 			'enable_debug'               => $this->posted_checkbox( 'hog_debug' ),
 			'products'                   => $this->posted_list( 'hog_products' ),
 			'customer_locales'           => $this->posted_list( 'hog_customer_locales' ),
+			'customer_emails'            => Customer_Emails::BLOCK === sanitize_key( wp_unslash( $_POST['hog_customer_emails'] ?? '' ) ) ? Customer_Emails::BLOCK : Customer_Emails::REDIRECT,
+			'customer_email_address'     => sanitize_email( wp_unslash( $_POST['hog_customer_email_address'] ?? '' ) ),
 		);
+
+		$posted_address = trim( sanitize_text_field( wp_unslash( $_POST['hog_customer_email_address'] ?? '' ) ) );
+		if ( '' !== $posted_address && ! is_email( $settings['customer_email_address'] ) ) {
+			$settings['customer_email_address'] = '';
+			\WC_Admin_Settings::add_error(
+				sprintf(
+					/* translators: %s: the default address, e.g. hog-customer@example.com */
+					__( 'The customer email address isn\'t a valid email address, so customer emails will go to %s.', 'happy-order-generator' ),
+					Customer_Emails::get_default_address()
+				)
+			);
+		}
 
 		/**
 		 * The maximum orders per hour can be reset by a filter, but defaults
