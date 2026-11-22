@@ -16,6 +16,7 @@ Happy Order Generator is a set-and-forget order generator for WooCommerce test s
 
 * Pays orders with BACS, or with WooCommerce Stripe when Stripe is in test mode. Stripe in live mode is ignored.
 * Supports simple, variable, subscription and variable subscription products. Subscriptions need WooCommerce Subscriptions. With Stripe in test mode, subscriptions are left in a valid, renewable state with a saved payment method.
+* Supports WooCommerce Product Bundles (tested with 8.7). Each bundle gets a random configuration that respects its required and optional items, quantity ranges, variations and min/max item limits. Bundles that can't be bought are left out of the order.
 * Creates test customers with FakerPHP, or reuses customers it created earlier.
 * HPOS compatible. Adds no database tables.
 
