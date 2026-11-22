@@ -6,9 +6,11 @@ xxxx-xx-xx - version x.x.x
 * Add - Generated customers get the "Generated customer (Happy Order Generator)" role, which has no capabilities, and the _happy_order_generator_customer user meta.
 * Add - "Requires at least", "Requires PHP" and "Requires Plugins" headers, readme.txt and changelog.txt.
 * Add - QIT-equivalent test suite (validation, compatibility, PHPStan, security, audit and Playwright E2E) and GitHub Actions CI.
+* Add - WooCommerce emails for generated customers go to hog-customer@ the site's domain, or an address set in the settings, instead of the customer's address. They can also be blocked.
 * Tweak - Order generation only runs on sites whose environment type is local, development or staging. Change the allowed types with the hog_allowed_environment_types filter.
 * Tweak - Only customers created by the generator are reused for new orders. Real customers are never used.
 * Tweak - Tested up to WordPress 7.1 and WooCommerce 11.3.
+* Fix - Creating a customer no longer sends WordPress's "Email Changed" notice to the made-up address the customer was first created with.
 * Fix - Products picked at random are now only published products that are in stock or on backorder. Drafts, private products and out-of-stock products could be picked before, and could make the order fail.
 * Fix - Fatal error when no supported payment gateway was available for a cart, such as a store with only Cheque enabled. The order is now skipped and logged.
 * Fix - Orders containing a subscription now use Stripe when it is available, so they can renew automatically, instead of a random supported gateway.

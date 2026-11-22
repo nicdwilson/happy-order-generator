@@ -39,6 +39,7 @@ The whole thing is fairly self-explanatory and is found at WooCommerce > Setting
 - Bypass SSL verify – This plugin uses the Store API, which means SSL verify is applied automatically when adding items to the cart or checking out. If you’re running a local install, you may want to bypass SSL verify if your certificate is self generated or untrusted. This applies the filter only for Happy Order Generator requests, but don’t use it if your site is in the wild. 
 - New customer locales – PHPFaker has a comprehensive list of countries to choose from for your new customers. You may be testing shipping, for instance and if you need some orders from a specific country, this is your setting. 
 - Customer naming conventions and Email conventions These orders can look too real for some test orders, so there is an option to set emails and customer names to ensure it is clear that this is test data. 
+- Customer emails – WooCommerce emails for generated customers, such as order confirmations, go to one address instead of the customer's: `hog-customer@` your site's domain by default (`hog-customer@example.com` for hosts without a dot, such as `localhost`), or an address you set. You can also choose not to send them at all. Emails for real customers and store staff aren't affected.
 - You can set the completed/failed/processing order percentages. The math isn’t going to be 100% but close as makes no difference in the end. Downloadable orders will always complete, and will ignore these settings.
 
 ## Other
