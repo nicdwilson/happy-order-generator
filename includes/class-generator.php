@@ -92,6 +92,7 @@ class Generator {
 		 */
 		$product             = new Product();
 		$cart_products       = $product->get_products_for_cart();
+		
 		$this->order_contains_subscription = $this->check_cart_for_subscription( $cart_products );
 		$error_message .= 'Adding ' . count( $cart_products ) . ' products to the cart'  . PHP_EOL;
 
@@ -104,7 +105,7 @@ class Generator {
 			Logger::log( $error_message );
 			return false;
 		}else{
-			$this->available_payment_methods = $add_to_cart_response;
+			$this->available_payment_methods = $add_to_cart_response['payment_methods'];
 		}
 
 		/**
@@ -155,7 +156,9 @@ class Generator {
 			Logger::log( $error_message );
 			Logger::log( 'Order creation failed to checkout.' );
 			Logger::log( $order );
+			return false;
 		}
+
 
 		/**
 		 * Set the fake customer IP.
@@ -199,7 +202,7 @@ class Generator {
 
 		$order->save();
 
-		Logger::log( __('Order ID ' . $order->get_id() . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'], 'happy-order-generator' ) );
+		Logger::log( 'Order ID ' . $order->get_id() . ' created for customer ID ' . $customer->get_id() . ' paid with ' . $options['payment_method'] );
 
 		return true;
 	}
@@ -235,10 +238,11 @@ class Generator {
 	}
 
 	/**
-	 * Checks items in the cart for a subscription. We don't want manual renewals cluttering things
-	 * up, so we're going to make sure subs don't go through as bacs payments.
+	 * Checks items in the cart for a subscription, including subscriptions inside
+	 * bundles. We don't want manual renewals cluttering things up, so we're going
+	 * to make sure subs don't go through as bacs payments.
 	 *
-	 * @param $cart_items
+	 * @param array $cart_items Cart items from Product::get_products_for_cart().
 	 *
 	 * @return bool True if cart contains a subscription.
 	 */
@@ -252,12 +256,34 @@ class Generator {
 				continue;
 			}
 
-			if ( $product->is_type( 'subscription' ) || $product->is_type( 'variable-subscription' ) || $product->is_type( 'subscription_variation' ) ) {
+			if ( $this->is_subscription_product( $product ) ) {
 				return true;
+			}
+
+			if ( empty( $cart_item['bundle_configuration'] ) || ! $product instanceof \WC_Product_Bundle ) {
+				continue;
+			}
+
+			$bundled_items = $product->get_bundled_items();
+
+			foreach ( $cart_item['bundle_configuration'] as $row ) {
+				$bundled_item = $bundled_items[ $row['bundled_item_id'] ] ?? null;
+
+				if ( $bundled_item && $bundled_item->product && $this->is_subscription_product( $bundled_item->product ) ) {
+					return true;
+				}
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * @param \WC_Product $product
+	 * @return bool True if the product is a subscription, variable subscription or subscription variation.
+	 */
+	private function is_subscription_product( $product ): bool {
+		return $product->is_type( array( 'subscription', 'variable-subscription', 'subscription_variation' ) );
 	}
 
 	/**

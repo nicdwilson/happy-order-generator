@@ -48,7 +48,9 @@ test.describe( 'Generated customers', () => {
 	} );
 
 	test( 'are marked, have the no-capability role, and own their orders', async () => {
+		const before = await generatedOrderCount();
 		await runGeneratorBatch( 1 );
+		expect( await generatedOrderCount() ).toBe( before + 1 );
 		const customer = await latestGeneratedCustomer();
 
 		expect( customer.id ).toBeGreaterThan( 0 );

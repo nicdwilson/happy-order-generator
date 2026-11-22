@@ -4,5 +4,5 @@ test-results/
 playwright-report/
 bootstrap/wp-env-mu-plugins/hog-e2e-no-background-queue.php
 bootstrap/wp-env-mu-plugins/hog-e2e-production.php
-# Local plugin mounts (licensed plugins, local paths). See tests/README.md.
+# Local-only wp-env config, e.g. to mount licensed extensions such as Product Bundles.
 .wp-env.override.json

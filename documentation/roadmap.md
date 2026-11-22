@@ -21,8 +21,8 @@ Decided June 2026:
 ## Phase 0 — Branch hygiene
 
 - [x] Commit the untracked `includes/class-http-client.php` and `includes/class-cart-handler.php` plus the pending modifications so the refactor is captured as a coherent commit. *(Done: `de5530c` on `add-product-bundles-support`, marked WIP.)*
-- [ ] **Deferred to Phase 2 resumption:** strip or downgrade the temporary diagnostic logging added while debugging (e.g. `print_r` dumps of full cart/checkout responses in `class-generator.php` and `class-order-builder.php`). Keep structured `Logger::info/warning/error` calls; drop the noisy step-by-step traces.
-- [ ] **Deferred to Phase 2 resumption:** rebase onto `dev` and squash the "debugging" commits (`e74a9dc`, etc.) into meaningful history before PR.
+- [x] **Deferred to Phase 2 (now a Phase 2 task):** strip or downgrade the temporary diagnostic logging added while debugging (e.g. `print_r` dumps of full cart/checkout responses in `class-generator.php` and `class-order-builder.php`). Keep structured `Logger::info/warning/error` calls; drop the noisy step-by-step traces.
+- [x] ~~**Deferred to Phase 2 resumption:** rebase onto `dev` and squash the "debugging" commits (`e74a9dc`, etc.) into meaningful history before PR.~~ *Not needed: the branch has been kept up to date with merge commits, so its history stays as it is.*
 
 ## Phase 1 — Bug fixes
 
@@ -39,7 +39,7 @@ Ordered roughly by severity. Each item should land with a unit test where practi
 | 1.3 `log_customer_in()` reads `$_POST` | Yes (pre-existing) | `fix/store-api-customer-login` off `dev` | ✅ merged (#4) |
 | 1.4 Logger `WP_Error` fatal + unguarded setting | Yes (pre-existing; branch has a rewritten Logger with the same `get_all_error_messages()` bug — fix both) | `fix/logger-wp-error` off `dev`, re-apply on branch rebase | ✅ merged (#5); re-apply on branch rebase |
 | 1.5 Scheduler `=` vs `==` | Yes (pre-existing) | `fix/scheduler-interval-check` off `dev` | ✅ merged (#6) |
-| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption | ⬜ deferred to Phase 2 |
+| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption | ✅ fixed on bundles branch |
 | 1.7 `subscription_variation` not detected | Yes (pre-existing) | `fix/subscription-variation-detection` off `dev` | ✅ merged (#7) |
 | 1.8 Smaller items | Mixed — text domain, dead `check()`/`admin_notices()` are on `dev`; `Order_Builder` leftovers are branch-only | Split accordingly | ⬜ pending (dev-side parts open) |
 
@@ -104,15 +104,46 @@ Two small, self-contained feature requests that improve the generated data and i
 
 The original cart code added all products through the Store API `/batch` endpoint. During bundle development we found that the bundle metadata (`bundle_configuration`) was not reaching Product Bundles in a readable format: bundles need the payload submitted as JSON, which Product Bundles handles correctly on a direct request, but when the same request goes through `/batch`, core WordPress's batch handling (`WP_REST_Server::serve_batch_request_v1()`) re-encodes the nested structure as array-style POST parameters, which Product Bundles cannot parse. This is what led to the split cart setup on the `add-product-bundles-support` branch — bundles via individual `/cart/add-item` POSTs, regular products still via `/batch` — which is admittedly messier than the original single-batch design. When resuming this phase, either keep the split (and document it as a WP-core limitation), simplify to single requests for *everything* (at the cost of one HTTP round trip per item), or investigate whether the batch handling has since been fixed upstream.
 
+**Checked November 2026 (WordPress 7.1.5, Product Bundles 8.5.17):** core's batch handling is unchanged, but it isn't the root cause. `serve_batch_request_v1()` passes the sub-request body through `set_body_params()`, and `bundle_configuration` arrives there intact, nested arrays and all. Product Bundles reads it only via `get_json_params()` (`WC_PB_Cart::handle_store_api_add_to_cart_request()`), which is empty inside a batch. So the configuration is ignored, and the bundle is added with its defaults and a 201, even for an invalid configuration. A test shim that gave the batched sub-request a JSON body made the same batch work fully: the chosen quantities and optional items were applied, and invalid IDs were rejected. **Decision for now:** keep the split. **Upstream:** ask Product Bundles to read `get_param( 'bundle_configuration' )`. Once that ships, bundles can go back into the single batch.
+
 ### Tasks
 
-- [ ] Land fix 1.2 (correct `bundled_item_id`) and verify a simple bundle reaches checkout end-to-end via the Store API.
-- [ ] Re-enable the commented-out **variable products inside bundles** block in `Product::generate_bundle_configuration()` (`includes/class-product.php:358-386`); confirm the expected keys (`variation_id`, `attributes` with `name`/`option`) against the Product Bundles Store API contract, and reuse the existing "Any attribute" fallback logic from the variation handling above it.
-- [ ] Respect bundle constraints when generating configurations: minimum/maximum bundle size, required (non-optional) items, and out-of-stock bundled items — currently random optional selection can produce invalid configurations that the API will reject.
-- [ ] Decide and document behaviour when Product Bundles is **not** active: `bundle` type is already removed from `$product_types` (`includes/class-product.php:81-84`); add a settings-page notice if the admin has explicitly selected a bundle product that can't be used.
-- [ ] Clean up `Cart_Handler` logging and confirm the single-request-vs-batch routing comment block reflects the final behaviour.
-- [ ] Add bundle products to the test fixtures (Phase 4) including: simple bundle, bundle with optional items, bundle with variable items, bundle with min/max quantities.
-- [ ] Open the PR to `main` once e2e passes with bundles in the random product pool.
+Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required items, optional items, quantity ranges) already reach checkout. Suggested order: the configuration tasks together in one PR (same function, same tests), then the order-flow tasks, then the cleanup.
+
+- [x] Land fix 1.2 (correct `bundled_item_id`) and verify a simple bundle reaches checkout end-to-end via the Store API. *(Done: `tests/e2e/tests/bundles.spec.js`.)*
+
+**Generate valid configurations for every kind of bundle** (`Product::generate_bundle_configuration()`)
+
+- [x] Re-enable the commented-out **variable products inside bundles** block in `Product::generate_bundle_configuration()`; confirm the expected keys (`variation_id`, `attributes` with `name`/`option`) against the Product Bundles Store API contract, and reuse the existing "Any attribute" fallback logic from the variation handling above it.
+  - **Product Bundles 8.6.0+ simplifies this** (checked against 8.7.0). `WC_PB_Cart::complete_variation_attributes()` fills in a chosen variation's fixed attributes, on add to cart and when building order configurations. So a bundled variable item can be sent with just `variation_id`, plus `attributes` rows (`name`/`option`) only for attributes the variation leaves as "Any". Pick the variation from `WC_Bundled_Item::get_product_variations()`, which respects the bundle's allowed-variations filter. Earlier versions need every attribute sent explicitly, so either require Product Bundles 8.6.0, or send all attributes to stay compatible with older versions.
+  - *Done: sends every attribute, so no minimum Product Bundles version is needed.*
+- [x] Respect the bundle-level **min/max item limits** from the Min/Max Items module (`_wcpb_min_qty_limit` / `_wcpb_max_qty_limit`). Random optional picks can currently fall outside them and be rejected.
+- [x] Handle bundled items with **no maximum quantity**: `get_quantity( 'max' )` returns `''`, so the generator always uses the minimum. Pick from a sensible range instead.
+- [x] Respect **stock and purchasability**: skip out-of-stock optional items, and skip bundles that fail `is_purchasable()` / `is_in_stock()` or have an out-of-stock required item. Today such a bundle fails the whole order at add to cart.
+
+**Make the rest of the order flow bundle-aware**
+
+- [x] **Subscriptions inside bundles:** `Generator::check_cart_for_subscription()` only checks top-level products, so a bundle containing a subscription isn't detected and a gateway that can't renew it (BACS) can be chosen. Check bundled items too. Also fix the `variable_subscription` type string in `Product::$product_types` (should be `variable-subscription`).
+  - *Found November 2026, on `main` too:* `Generator::get_payment_method()` checks `isset( $hog_payment_methods['stripe'] )`, but Stripe is added to that list as a value, not a key, so subscription orders never prefer Stripe. *Fixed on `main` (#25).*
+- [x] Decide and document behaviour when Product Bundles is **not** active: `bundle` type is already removed from `$product_types`; add a settings-page notice if the admin has explicitly selected a bundle product that can't be used.
+
+**Clean up the refactor before it reaches `main`**
+
+- [x] Fix **1.6** (`HTTP_Client`): declare `private ?string $nonce = null`.
+- [x] Cut the **logging** back to failures and key steps (the deferred Phase 0 item). `Generator` logs `print_r( $options )`, which includes Stripe payment data, and the full add-to-cart response; `Order_Builder` logs the full checkout response; `Cart_Handler` logs every step.
+- [x] Use or remove the **unused methods** left by the refactor: `Cart_Handler::clear_cart()` and `get_payment_methods()`, `Order_Builder::refresh_nonce()`. *(Done: removed, along with the other unused `HTTP_Client`, `Order_Builder`, `Product` and `Logger` methods.)*
+- [x] Confirm the single-request-vs-batch routing comment in `Cart_Handler` reflects the final behaviour. *(Done: corrected with the November 2026 batch finding.)*
+
+**Tests**
+
+- [x] Add bundle E2E cases for: variable bundled items, bundle min/max limits, out-of-stock bundled items, a subscription inside a bundle (if supported), and bundles in the **random** product pool (not only when selected in settings). *The random-pool test found two bugs, fixed on `main` (#29): unbuyable products were picked, and a cart with no supported gateway was a fatal error.*
+- [ ] Decide how bundle tests run in CI. Product Bundles is licensed, so `bundles.spec.js` currently skips in CI and runs locally only (see `tests/README.md`). *(Parked November 2026.)*
+
+**Ship it**
+
+- [ ] **Upstream (optional):** ask Product Bundles to read `get_param( 'bundle_configuration' )`, which fixes the silent batch acceptance and lets bundles go back into the single batch.
+- [x] Add changelog, README and `readme.txt` entries for bundle support, including "Tested with Product Bundles 8.7".
+- [ ] Merge the bundles branch into `dev` (merge commit), then `dev` into `main` once E2E passes with bundles in the random product pool. This also brings the bundles-branch Logger `get_error_code()` fix to `dev`/`main`.
 
 ## Phase 3 — Code standards & hardening
 

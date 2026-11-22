@@ -64,6 +64,22 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 			$message = '<strong>' . esc_html__( 'Orders per Hour is 0, so no orders will be created. Set it to 1 or more to start generating.', 'happy-order-generator' ) . '</strong>';
 		}
 
+		$unusable_bundles = $this->get_unusable_bundle_names( $product_ids );
+		if ( ! empty( $unusable_bundles ) ) {
+			$message .= ( '' === $message ? '' : '<br><br>' ) . '<strong>' . esc_html(
+				sprintf(
+					/* translators: %s: comma-separated product names */
+					_n(
+						'Product Bundles isn\'t active, so this selected product can\'t be added to generated orders: %s',
+						'Product Bundles isn\'t active, so these selected products can\'t be added to generated orders: %s',
+						count( $unusable_bundles ),
+						'happy-order-generator'
+					),
+					implode( ', ', $unusable_bundles )
+				)
+			) . '</strong>';
+		}
+
 		$country_ids = ( isset( $settings['customer_locales'] ) ) ? maybe_unserialize( $settings['customer_locales'] ) : array();
 
 		$settings_array = array(
@@ -290,6 +306,31 @@ class WC_Settings_Order_Generator_Settings extends WC_Settings_Page {
 		);
 
 		return apply_filters( 'woocommerce_get_settings_' . $this->id, $settings_array );
+	}
+
+	/**
+	 * Names of selected bundle products that can't be used because Product Bundles isn't active.
+	 *
+	 * @param array $product_ids Selected product IDs.
+	 * @return string[]
+	 */
+	private function get_unusable_bundle_names( array $product_ids ): array {
+
+		if ( class_exists( 'WC_Product_Bundle' ) ) {
+			return array();
+		}
+
+		$names = array();
+
+		foreach ( $product_ids as $product_id ) {
+			// Without Product Bundles, wc_get_product() loads a bundle as a simple product,
+			// so read the stored product type instead.
+			if ( 'bundle' === \WC_Product_Factory::get_product_type( (int) $product_id ) ) {
+				$names[] = get_the_title( (int) $product_id );
+			}
+		}
+
+		return $names;
 	}
 
 	/**
