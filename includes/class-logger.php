@@ -92,50 +92,6 @@ class Logger {
 	}
 
 	/**
-	 * Log API request details
-	 *
-	 * @param string $endpoint API endpoint
-	 * @param string $method HTTP method
-	 * @param array $data Request data
-	 * @param array $response Response data
-	 * @return void
-	 */
-	public static function log_api_request( string $endpoint, string $method, array $data = [], array $response = [] ): void {
-		$context = [
-			'endpoint' => $endpoint,
-			'method' => $method,
-			'data_keys' => array_keys( $data ),
-			'response_keys' => array_keys( $response ),
-			'timestamp' => current_time( 'mysql' )
-		];
-
-		self::info( 'API Request completed', $context );
-	}
-
-	/**
-	 * Log cart operation details
-	 *
-	 * @param string $operation Operation performed
-	 * @param array $items Items involved
-	 * @param mixed $result Result of operation
-	 * @return void
-	 */
-	public static function log_cart_operation( string $operation, array $items = [], $result = null ): void {
-		$context = [
-			'operation' => $operation,
-			'items_count' => count( $items ),
-			'result_type' => gettype( $result ),
-			'timestamp' => current_time( 'mysql' )
-		];
-
-		if ( is_array( $result ) ) {
-			$context['result_keys'] = array_keys( $result );
-		}
-
-		self::info( 'Cart operation completed', $context );
-	}
-
-	/**
 	 * Log error with full context
 	 *
 	 * @param string $message Error message

@@ -21,7 +21,7 @@ Decided June 2026:
 ## Phase 0 — Branch hygiene
 
 - [x] Commit the untracked `includes/class-http-client.php` and `includes/class-cart-handler.php` plus the pending modifications so the refactor is captured as a coherent commit. *(Done: `de5530c` on `add-product-bundles-support`, marked WIP.)*
-- [ ] **Deferred to Phase 2 (now a Phase 2 task):** strip or downgrade the temporary diagnostic logging added while debugging (e.g. `print_r` dumps of full cart/checkout responses in `class-generator.php` and `class-order-builder.php`). Keep structured `Logger::info/warning/error` calls; drop the noisy step-by-step traces.
+- [x] **Deferred to Phase 2 (now a Phase 2 task):** strip or downgrade the temporary diagnostic logging added while debugging (e.g. `print_r` dumps of full cart/checkout responses in `class-generator.php` and `class-order-builder.php`). Keep structured `Logger::info/warning/error` calls; drop the noisy step-by-step traces.
 - [ ] **Deferred to Phase 2 resumption:** rebase onto `dev` and squash the "debugging" commits (`e74a9dc`, etc.) into meaningful history before PR.
 
 ## Phase 1 — Bug fixes
@@ -39,7 +39,7 @@ Ordered roughly by severity. Each item should land with a unit test where practi
 | 1.3 `log_customer_in()` reads `$_POST` | Yes (pre-existing) | `fix/store-api-customer-login` off `dev` | ✅ merged (#4) |
 | 1.4 Logger `WP_Error` fatal + unguarded setting | Yes (pre-existing; branch has a rewritten Logger with the same `get_all_error_messages()` bug — fix both) | `fix/logger-wp-error` off `dev`, re-apply on branch rebase | ✅ merged (#5); re-apply on branch rebase |
 | 1.5 Scheduler `=` vs `==` | Yes (pre-existing) | `fix/scheduler-interval-check` off `dev` | ✅ merged (#6) |
-| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption | ⬜ deferred to Phase 2 |
+| 1.6 `HTTP_Client` typed properties | No — branch-only code (file doesn't exist on `dev`) | Bundles branch, on resumption | ✅ fixed on bundles branch |
 | 1.7 `subscription_variation` not detected | Yes (pre-existing) | `fix/subscription-variation-detection` off `dev` | ✅ merged (#7) |
 | 1.8 Smaller items | Mixed — text domain, dead `check()`/`admin_notices()` are on `dev`; `Order_Builder` leftovers are branch-only | Split accordingly | ⬜ pending (dev-side parts open) |
 
@@ -129,9 +129,9 @@ Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required it
 
 **Clean up the refactor before it reaches `main`**
 
-- [ ] Fix **1.6** (`HTTP_Client`): declare `private ?string $nonce = null`.
-- [ ] Cut the **logging** back to failures and key steps (the deferred Phase 0 item). `Generator` logs `print_r( $options )`, which includes Stripe payment data, and the full add-to-cart response; `Order_Builder` logs the full checkout response; `Cart_Handler` logs every step.
-- [ ] Use or remove the **unused methods** left by the refactor: `Cart_Handler::clear_cart()` and `get_payment_methods()`, `Order_Builder::refresh_nonce()`.
+- [x] Fix **1.6** (`HTTP_Client`): declare `private ?string $nonce = null`.
+- [x] Cut the **logging** back to failures and key steps (the deferred Phase 0 item). `Generator` logs `print_r( $options )`, which includes Stripe payment data, and the full add-to-cart response; `Order_Builder` logs the full checkout response; `Cart_Handler` logs every step.
+- [x] Use or remove the **unused methods** left by the refactor: `Cart_Handler::clear_cart()` and `get_payment_methods()`, `Order_Builder::refresh_nonce()`. *(Done: removed, along with the other unused `HTTP_Client`, `Order_Builder`, `Product` and `Logger` methods.)*
 - [x] Confirm the single-request-vs-batch routing comment in `Cart_Handler` reflects the final behaviour. *(Done: corrected with the November 2026 batch finding.)*
 
 **Tests**

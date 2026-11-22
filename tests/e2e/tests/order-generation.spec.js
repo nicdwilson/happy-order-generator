@@ -76,6 +76,22 @@ test.describe( 'Order generation', () => {
 		expect( [ 'Desktop', 'Mobile', 'Tablet' ] ).toContain( order.device_type );
 	} );
 
+	test( 'debug logging records the order without dumping cart, checkout or payment data', async () => {
+		const logs = "glob( trailingslashit( WC_LOG_DIR ) . 'happy-order-generator-*.log' )";
+		await wpEval( `foreach ( ${ logs } as $f ) { unlink( $f ); }` );
+
+		const productId = await productIdBySlug( 'hog-e2e-product' );
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ], enable_debug: 'yes' } );
+		await runGeneratorBatch( 1 );
+		await setSettings( { orders_per_hour: 6, products: [ String( productId ) ] } );
+
+		const log = await wpEval( `$out = ''; foreach ( ${ logs } as $f ) { $out .= file_get_contents( $f ); } echo $out;` );
+		expect( log ).toMatch( /Order ID \d+ created for customer ID \d+ paid with bacs/ );
+		for ( const dump of [ 'Payment data prepared', 'Add to cart response', 'Checkout response', 'payment_methods', 'billing_address' ] ) {
+			expect( log, dump ).not.toContain( dump );
+		}
+	} );
+
 	test( 'generation raised no PHP notices, warnings or errors', async () => {
 		const issues = pluginPhpIssues( await readDebugLog() );
 		expect( issues, issues.join( '\n' ) ).toEqual( [] );

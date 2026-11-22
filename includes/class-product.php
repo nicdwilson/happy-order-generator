@@ -104,15 +104,6 @@ class Product {
 	}
 
 	/**
-	 * Public method to check bundle support (can be called later if timing is an issue)
-	 *
-	 * @return bool
-	 */
-	public function check_bundle_support(): bool {
-		return $this->has_bundle_support();
-	}
-
-	/**
 	 * Dynamically add bundle support if it becomes available
 	 *
 	 * @return void
@@ -194,8 +185,6 @@ class Product {
 
 		foreach ( $products as $product ) {
 
-			Logger::log( 'Processing product: ' . $product->get_id() . ' (' . $product->get_type() . ') - ' . $product->get_title() );
-
 			$type         = $product->get_type();
 			$variation_id = 0;
 			$variation    = false;
@@ -270,8 +259,6 @@ class Product {
 			$cart_products[] = $cart_product;
 
 		}
-
-		Logger::log( 'Total products processed: ' . count( $cart_products ) );
 
 		return apply_filters( 'hog_get_cart_products', $cart_products, $products );
 	}
