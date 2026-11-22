@@ -112,6 +112,11 @@ class Order_Generator {
 		add_action( 'wp_ajax_hog_dismiss_running_notice', array( $this, 'dismiss_running_notice' ) );
 
 		/**
+		 * Keep customer emails for generated customers away from their addresses
+		 */
+		add_action( 'woocommerce_email', array( 'Happy_Order_Generator\Customer_Emails', 'register' ) );
+
+		/**
 		 * Fire up the Stripe Gateway integration
 		 */
 		add_action( 'plugins_loaded', array( 'Happy_Order_Generator\Gateway_Integration_Stripe', 'instance' ) );

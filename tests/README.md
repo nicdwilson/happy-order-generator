@@ -46,7 +46,9 @@ npm run env:stop
 `bootstrap/wp-env-mu-plugins/` is wp-env-only glue, mounted by `.wp-env.json`.
 Inside the wp-env containers the site URL (`localhost:8890`) isn't the web
 server, so the plugin's Store API loopback requests are rerouted to the
-WordPress container. It is never shipped and never used under QIT.
+WordPress container. `hog-e2e-mail-log.php` records outgoing mail in the
+`hog_e2e_mail_log` option instead of sending it, for `customer-emails.spec.js`,
+which skips without it. None of this is shipped or used under QIT.
 
 ### Known failures
 
