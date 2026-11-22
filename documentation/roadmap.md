@@ -136,7 +136,7 @@ Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required it
 
 **Tests**
 
-- [ ] Add bundle E2E cases for: variable bundled items, bundle min/max limits, out-of-stock bundled items, a subscription inside a bundle (if supported), and bundles in the **random** product pool (not only when selected in settings).
+- [x] Add bundle E2E cases for: variable bundled items, bundle min/max limits, out-of-stock bundled items, a subscription inside a bundle (if supported), and bundles in the **random** product pool (not only when selected in settings). *The random-pool test found two bugs, fixed on `main` (#29): unbuyable products were picked, and a cart with no supported gateway was a fatal error.*
 - [ ] Decide how bundle tests run in CI. Product Bundles is licensed, so `bundles.spec.js` currently skips in CI and runs locally only (see `tests/README.md`). *(Parked November 2026.)*
 
 **Ship it**

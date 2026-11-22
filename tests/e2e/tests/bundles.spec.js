@@ -6,7 +6,7 @@
  * (see tests/README.md).
  */
 const { test, expect } = require( '@playwright/test' );
-const { wp, wpEval, setSettings, generatedOrderCount, runGeneratorBatch, clearScheduledActions, productIdBySlug, loginAsAdmin, SETTINGS_URL } = require( './utils/wp' );
+const { wp, wpEval, setSettings, generatedOrderCount, runGeneratorBatch, clearScheduledActions, productIdBySlug, loginAsAdmin, SETTINGS_URL, clearDebugLog, readDebugLog, pluginPhpIssues } = require( './utils/wp' );
 
 /**
  * Creates (or reuses) a virtual variable product with a custom Size attribute
@@ -278,6 +278,55 @@ test.describe( 'Product Bundles', () => {
 			` )
 		);
 		expect( detected ).toEqual( { with: true, without: false } );
+	} );
+
+	test( 'bundles picked from the random product pool reach checkout with their bundled items', async () => {
+		// No products selected, so every fixture above is in the pool, including
+		// bundles that can't be bought and subscriptions with no gateway to renew them.
+		await setSettings( { orders_per_hour: 6, products: [] } );
+		await clearDebugLog();
+
+		const attempts = JSON.parse(
+			await wpEval( `
+				$picked = array();
+				add_filter( 'hog_get_cart_products', function ( $cart, $products ) use ( &$picked ) {
+					$picked = array_map( function ( $p ) { return $p->get_type(); }, $products );
+					return $cart;
+				}, 10, 2 );
+				$latest = function () {
+					$ids = wc_get_orders( array( 'limit' => 1, 'orderby' => 'id', 'order' => 'DESC', 'return' => 'ids', 'meta_key' => '_happy_order_generator_order', 'meta_value' => 1 ) );
+					return $ids ? $ids[0] : 0;
+				};
+				$attempts = array();
+				// Generate directly rather than through a batch, which waits 5 seconds per order.
+				for ( $i = 0; $i < 20; $i++ ) {
+					$picked  = array();
+					$before  = $latest();
+					$error   = '';
+					try { ( new Happy_Order_Generator\\Generator() )->generate_order(); } catch ( Throwable $e ) { $error = $e->getMessage(); }
+					$attempt = array( 'picked' => $picked, 'error' => $error, 'containers' => 0, 'bundled' => 0 );
+					if ( $latest() !== $before ) {
+						foreach ( wc_get_order( $latest() )->get_items() as $item ) {
+							$attempt['containers'] += wc_pb_is_bundle_container_order_item( $item ) ? 1 : 0;
+							$attempt['bundled']    += wc_pb_is_bundled_order_item( $item ) ? 1 : 0;
+						}
+					}
+					$attempts[] = $attempt;
+					if ( $attempt['containers'] > 0 ) { break; }
+				}
+				echo wp_json_encode( $attempts );
+			` )
+		);
+
+		const summary = JSON.stringify( attempts );
+		expect( attempts.filter( ( a ) => a.error ), summary ).toEqual( [] );
+		const withBundle = attempts.find( ( a ) => a.containers > 0 );
+		expect( withBundle, `no order with a bundle in ${ attempts.length } attempts: ${ summary }` ).toBeTruthy();
+		expect( withBundle.picked ).toContain( 'bundle' );
+		expect( withBundle.bundled ).toBeGreaterThanOrEqual( withBundle.containers );
+
+		const issues = pluginPhpIssues( await readDebugLog() );
+		expect( issues, issues.join( '\n' ) ).toEqual( [] );
 	} );
 } );
 
