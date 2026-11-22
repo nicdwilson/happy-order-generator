@@ -24,6 +24,7 @@ Happy Order Generator is a set-and-forget order generator for WooCommerce test s
 * Only runs on sites whose environment type (`WP_ENVIRONMENT_TYPE`) is `local`, `development` or `staging`. Sites that don't set it count as production, so no orders are generated there.
 * While orders are being generated, administrators and shop managers see a warning on admin screens, with the current rate.
 * Generation can be paused from the settings page without deactivating the plugin.
+* WooCommerce emails for generated customers go to one address (`hog-customer@` your domain by default, or one you choose) or aren't sent at all. Emails for real customers and store staff aren't affected.
 * Generated orders have the `_happy_order_generator_order` meta set to `1`. Generated customers have the `_happy_order_generator_customer` meta set to `1` and the "Generated customer (Happy Order Generator)" role, which has no capabilities. Real customers are never used for generated orders.
 
 == Installation ==
