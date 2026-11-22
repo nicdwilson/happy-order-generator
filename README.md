@@ -13,6 +13,7 @@ This tool is designed to build a steady dataset and is not a stress-tester or bu
 This is
 - Set and forget - as long as your cron is reliable, it will generate orders
 - It supports simple, variable, subscription and variable subscription products (for these Woo Subscriptions needs to be active). 
+- It supports WooCommerce Product Bundles (tested with Product Bundles 8.7). Each bundle in an order gets a random configuration that Product Bundles accepts: required items are always included, optional items are added at random, quantities stay within each item's range, variable bundled items get an available variation, and the bundle's min/max item limits are respected. Bundles that can't be bought, such as ones with an out-of-stock required item, are left out of the order rather than failing it. If Product Bundles isn't active, bundles are never picked, and the settings page names any selected bundles that can't be used.
 - If you have the WooCommerce Stripe plugin running in test mode, Subscriptions are left in a valid, renewable state with a saved payment method. Renewals should just work.
 - It is HPOS compatible.
 - It does not add database tables.

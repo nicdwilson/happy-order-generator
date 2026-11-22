@@ -22,7 +22,7 @@ Decided June 2026:
 
 - [x] Commit the untracked `includes/class-http-client.php` and `includes/class-cart-handler.php` plus the pending modifications so the refactor is captured as a coherent commit. *(Done: `de5530c` on `add-product-bundles-support`, marked WIP.)*
 - [x] **Deferred to Phase 2 (now a Phase 2 task):** strip or downgrade the temporary diagnostic logging added while debugging (e.g. `print_r` dumps of full cart/checkout responses in `class-generator.php` and `class-order-builder.php`). Keep structured `Logger::info/warning/error` calls; drop the noisy step-by-step traces.
-- [ ] **Deferred to Phase 2 resumption:** rebase onto `dev` and squash the "debugging" commits (`e74a9dc`, etc.) into meaningful history before PR.
+- [x] ~~**Deferred to Phase 2 resumption:** rebase onto `dev` and squash the "debugging" commits (`e74a9dc`, etc.) into meaningful history before PR.~~ *Not needed: the branch has been kept up to date with merge commits, so its history stays as it is.*
 
 ## Phase 1 — Bug fixes
 
@@ -142,7 +142,7 @@ Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required it
 **Ship it**
 
 - [ ] **Upstream (optional):** ask Product Bundles to read `get_param( 'bundle_configuration' )`, which fixes the silent batch acceptance and lets bundles go back into the single batch.
-- [ ] Add changelog, README and `readme.txt` entries for bundle support, including "Tested with Product Bundles 8.7".
+- [x] Add changelog, README and `readme.txt` entries for bundle support, including "Tested with Product Bundles 8.7".
 - [ ] Merge the bundles branch into `dev` (merge commit), then `dev` into `main` once E2E passes with bundles in the random product pool. This also brings the bundles-branch Logger `get_error_code()` fix to `dev`/`main`.
 
 ## Phase 3 — Code standards & hardening
