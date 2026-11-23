@@ -1,6 +1,6 @@
 *** Happy Order Generator Changelog ***
 
-xxxx-xx-xx - version x.x.x
+2026-11-23 - version 1.2.0
 * Tweak - Update FakerPHP to 1.24.1, which fixes PHP 8.4 deprecation notices.
 
 2026-11-23 - version 1.1.0
