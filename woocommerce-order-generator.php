@@ -3,7 +3,7 @@
  * Plugin Name: Happy Order Generator
  * Plugin URI: https://github.com/nicdwilson/happy-order-generator
  * Description: Automatically generates a steady stream of test orders on WooCommerce test and staging sites.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: nicw
  * Author URI: https://woocommerce.com
  * License: GPLv3
