@@ -1,5 +1,8 @@
 *** Happy Order Generator Changelog ***
 
+xxxx-xx-xx - version x.x.x
+* Tweak - Update FakerPHP to 1.24.1, which fixes PHP 8.4 deprecation notices.
+
 2026-11-23 - version 1.1.0
 * Add - Enable/Disable setting at the top of the settings page, to pause order generation without deactivating the plugin.
 * Add - Warning on admin screens for administrators and shop managers while orders are being generated, showing the hourly rate. It can be dismissed until the next login.
