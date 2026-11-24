@@ -198,7 +198,9 @@ Updated November 2026 against Product Bundles 8.7.0. Simple bundles (required it
 
 ---
 
-## Phase 6 — WooPayments gateway integration (v1.2.0)
+## Phase 6 — WooPayments gateway integration (now v1.3.0)
+
+> Superseded by [`woopayments-integration.md`](woopayments-integration.md), which is checked against WooPayments 11.3.0 and also covers moving the integrations into `includes/integrations/`. The outline below is kept for history.
 
 Mirror the architecture of `Gateway_Integration_Stripe`: a self-contained class that opts the gateway in via filters, supplies checkout `payment_data`, simulates failures with test cards, and leaves subscriptions renewable.
 
