@@ -187,6 +187,7 @@ class Order_Builder {
 				'state'      => $shipping_state,
 				'postcode'   => $shipping_postcode,
 				'country'    => $shipping_country,
+				'phone'      => $billing_phone,
 			),
 			'customer_note'    => '',
 			'payment_method'   => $options['payment_method'],
@@ -198,6 +199,22 @@ class Order_Builder {
 		if ( 'stripe' === $options['payment_method'] ) {
 
 			$body['payment_data'] = array(
+				/**
+				 * Stripe 8.x+ (the UPE gateway, the only one from 10.x) reads
+				 * the payment method from these keys. Without them it throws
+				 * "Payment method ID is missing from the request."
+				 */
+				array(
+					'key'   => 'wc-stripe-payment-method',
+					'value' => $options['payment_data']['stripe_source_id'],
+				),
+				array(
+					'key'   => 'wc_stripe_selected_upe_payment_type',
+					'value' => 'card',
+				),
+				/**
+				 * Legacy (pre-UPE) Stripe key, kept for older Stripe versions.
+				 */
 				array(
 					'key'   => 'stripe_source',
 					'value' => $options['payment_data']['stripe_source_id'],

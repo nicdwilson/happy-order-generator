@@ -184,7 +184,7 @@ class Gateway_Integration_Stripe {
 		/**
 		 * Bail if the order has already failed
 		 */
-		if ( $order->get_status() === 'failed' || $order->payment_method !== 'stripe' ) {
+		if ( $order->get_status() === 'failed' || $order->get_payment_method() !== 'stripe' ) {
 			return;
 		}
 
